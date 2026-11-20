@@ -1,5 +1,4 @@
 /secrets/
-/docker-compose.yml
 /BackEnd/.env
 /BackEnd/.env.*
 !/BackEnd/.env.example

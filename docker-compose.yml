@@ -1,0 +1,36 @@
+services:
+  gate1-backend:
+    image: node:22-alpine
+    container_name: gate1-backend
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "src/server.js"]
+    volumes:
+      - ./BackEnd:/app
+      - ./FrontEnd:/FrontEnd
+      - ./data:/app/data
+    environment:
+      AUTH_DB_PATH: /app/data/auth.db
+
+  gate1-ngrok:
+    image: ngrok/ngrok:latest
+    container_name: gate1-ngrok
+    restart: unless-stopped
+
+    env_file:
+      - ./secrets/ngrok.env
+
+    command:
+      - http
+      - gate1-frontend:80
+      - --url
+      - https://pristine-canon-wrench.ngrok-free.dev
+
+    depends_on:
+      - gate1-frontend
+
+    networks:
+      - gate1-network
+
+networks:
+  gate1-network:
