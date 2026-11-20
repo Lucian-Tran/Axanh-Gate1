@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>AXANH Phiên chợ tri thức | ATED PRO</title>
+  <link rel="icon" type="image/png" href="/IconWeb.png" />
+  <link rel="stylesheet" href="style.css?v=20261119-v13" />
+</head>
+
+<body>
+  <div class="app-shell" id="appShell" style="display:none">
+    <aside id="sidebar" class="sidebar">
+      <div class="brand" style="display:block;background:#001b4c;border-radius:16px;padding:10px 10px 16px"><img
+          id="brandLogo" alt="Logo AXANH"
+          style="width:100%;height:auto;max-height:74px;object-fit:contain;object-position:left center">
+        <div class="brand-caption" style="margin:6px 0 0 8px">PHIÊN CHỢ TRI THỨC</div>
+      </div>
+      <div id="navArea"></div>
+      <div class="aside-bottom"><span class="flag"><i></i> ATED PRO 2026</span>
+        <p>Không chỉ chia sẻ điều mình biết. Cùng tạo cơ hội để đồng đội trưởng thành.</p>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:13px"><button type="button" class="btn small mobile-toggle"
+            data-action="mobile-menu" aria-label="Mở menu">☰</button>
+          <div class="breadcrumb">ATED PRO 2026 / <span id="topCategory">Tổng quan</span><strong id="topTitle">Phiên chợ
+              tri thức</strong></div>
+        </div>
+        <div class="top-actions"><span class="chip chip-demo">● CHẾ ĐỘ DEMO · CHƯA ĐỒNG BỘ LARK</span>
+          <div class="avatar-mini">AX</div>
+        </div>
+      </header>
+      <div id="view" class="content"></div>
+    </main>
+  </div>
+  <!-- Màn hình đăng nhập AXANH (ẩn khi đã login) -->
+  <div id="authScreen" class="axanh-auth-screen" style="display:none" aria-live="polite"></div>
+  <canvas id="fxCanvas" class="fireworks-layer" aria-hidden="true"></canvas>
+  <div id="modal" class="modal-backdrop" role="presentation"></div>
+  <div id="toasts" class="toastbox" aria-live="polite"></div>
+
+  <!-- Dữ liệu mẫu (Seed Data) & Logic ứng dụng -->
+  <script src="seed-data.js"></script>
+  <script src="api.js?v=20261117-v15"></script>
+  <script src="app.js?v=20261119-v54"></script>
+</body>
+
+</html>

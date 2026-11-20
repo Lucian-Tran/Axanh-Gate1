@@ -1,0 +1,8 @@
+/secrets/
+/docker-compose.yml
+/BackEnd/.env
+/BackEnd/.env.*
+!/BackEnd/.env.example
+/data/
+**/node_modules/
+/FrontEnd/dist/
