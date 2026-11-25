@@ -1,0 +1,4 @@
+version: "3.7"
+services:
+  web:
+    image: axanh-gate1_web:clientip-v2-20261123

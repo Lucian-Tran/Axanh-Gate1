@@ -1,0 +1,9 @@
+*
+!Dockerfile.gate1.candidate
+!nginx.conf.gate1.candidate
+!index.html
+!app.js
+!api.js
+!style.css
+!seed-data.js
+!IconWeb.png

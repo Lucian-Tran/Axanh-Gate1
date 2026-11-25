@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { isIP } from 'node:net';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -19,6 +20,10 @@ import { createGate1Service } from './gate1-service.js';
 
 const SESSION_MAX_AGE_SECONDS = 4 * 60 * 60;
 const COOKIE_NAME = 'axanh_dev_session';
+
+const DEV_AUTH_ENABLED =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.AXANH_ENABLE_DEV_AUTH === 'true';
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'FrontEnd');
 
 const staticFiles = new Map([
@@ -30,6 +35,7 @@ const staticFiles = new Map([
 ]);
 
 function sameKey(value, expected) {
+  if (!DEV_AUTH_ENABLED) return false;
   if (typeof value !== 'string') return false;
   const a = Buffer.from(value);
   const b = Buffer.from(expected);
@@ -140,7 +146,82 @@ function getAllowedOrigins(config) {
   ]);
 }
 
+function isTrustedProxyPeer(req, config) {
+  const raw = req?.socket?.remoteAddress || '';
+  const peer = String(raw).replace(/^::ffff:/, '');
+
+  return Boolean(
+    config?.trustedProxyIp &&
+    isIP(peer) === 4 &&
+    peer === config.trustedProxyIp
+  );
+}
+
+function getTrustedClientIp(req, config) {
+  const raw = req?.socket?.remoteAddress || '';
+  const peer = String(raw).replace(/^::ffff:/, '');
+
+  if (process.env.NODE_ENV !== 'production') {
+    return isIP(peer) ? peer : null;
+  }
+
+  if (!isTrustedProxyPeer(req, config)) {
+    return null;
+  }
+
+  // Gate1 Nginx must overwrite X-Real-IP.
+  // Never accept a user-supplied X-Forwarded-For chain.
+  const clientIp = req?.headers?.['x-real-ip'];
+
+  if (typeof clientIp !== 'string' || !isIP(clientIp)) {
+    return null;
+  }
+
+  return clientIp;
+}
+
 function sameOriginPost(req, config) {
+  if (process.env.NODE_ENV === 'production') {
+    let expected;
+    try {
+      expected = new URL(config.frontendUrl);
+    } catch {
+      return false;
+    }
+
+    if (expected.protocol !== 'https:') return false;
+    if (!isTrustedProxyPeer(req, config)) return false;
+
+    const host = req.headers.host;
+    if (typeof host !== 'string' ||
+        host.toLowerCase() !== expected.host.toLowerCase()) {
+      return false;
+    }
+
+    // Nginx must overwrite this header, not forward client input.
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      return false;
+    }
+
+    if (req.headers['sec-fetch-site'] === 'cross-site') {
+      return false;
+    }
+
+    const origin = req.headers.origin;
+    if (typeof origin === 'string') {
+      return origin.toLowerCase() === expected.origin.toLowerCase();
+    }
+
+    const referer = req.headers.referer;
+    if (typeof referer !== 'string') return false;
+
+    try {
+      return new URL(referer).origin.toLowerCase() ===
+        expected.origin.toLowerCase();
+    } catch {
+      return false;
+    }
+  }
   const host = (isLocalRequest(req) && req.headers['x-forwarded-host']) || req.headers.host;
   if (!host || typeof host !== 'string') return false;
   const requestedHost = host.toLowerCase();
@@ -194,6 +275,14 @@ function sameOriginPost(req, config) {
   return false;
 }
 
+function isAllowedWriteRequest(req, config) {
+  if (process.env.NODE_ENV === 'production') {
+    return sameOriginPost(req, config);
+  }
+
+  return isLocalRequest(req) && sameOriginPost(req, config);
+}
+
 function cookieValue(req, name) {
   const cookies = String(req.headers.cookie ?? '').split(';');
   const entry = cookies.find((item) => item.trim().startsWith(`${name}=`));
@@ -202,30 +291,28 @@ function cookieValue(req, name) {
 
 function createSessionCookie(token, maxAge = SESSION_MAX_AGE_SECONDS, req = null, config, sameSiteOverride = null) {
   const host = (isLocalRequest(req) && req?.headers?.['x-forwarded-host']) || req?.headers?.host || '';
-  const isEncrypted = Boolean(req?.socket?.encrypted) || req?.headers?.['x-forwarded-proto'] === 'https' || isNgrokHost(host);
+  const isEncrypted = process.env.NODE_ENV === 'production' || Boolean(req?.socket?.encrypted) || req?.headers?.['x-forwarded-proto'] === 'https' || isNgrokHost(host);
   const secureFlag = (config.cookieSecure || isEncrypted) ? '; Secure' : '';
   const sameSite = sameSiteOverride || (isEncrypted ? 'Lax' : 'Strict');
   return `${COOKIE_NAME}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secureFlag}`;
 }
 
-function hasSession(req, sessions, authStore = null) {
-  const value = cookieValue(req, COOKIE_NAME);
-  if (!value || !/^[0-9a-f]{64}$/.test(value)) return false;
-  if (authStore) {
-    const s = authStore.getSession(value);
-    if (s) return true;
+function isAllowedAuthSession(session) {
+  if (!session || typeof session !== 'object' ||
+      !session.user || typeof session.user !== 'object' ||
+      Array.isArray(session.user)) {
+    return false;
   }
-  if (sessions) {
-    const entry = sessions.get(value);
-    if (!entry) return false;
-    const expires = typeof entry === 'number' ? entry : entry.expiresAt;
-    if (Date.now() >= expires) {
-      sessions.delete(value);
-      return false;
-    }
+
+  if (['email-otp', 'lark', 'lark-in-app'].includes(session.authType)) {
     return true;
   }
-  return false;
+
+  return DEV_AUTH_ENABLED && session.authType === 'local-dev';
+}
+
+function hasSession(req, sessions, authStore = null) {
+  return Boolean(getSession(req, sessions, authStore));
 }
 
 function getSession(req, sessions, authStore = null) {
@@ -233,7 +320,9 @@ function getSession(req, sessions, authStore = null) {
   if (!value || !/^[0-9a-f]{64}$/.test(value)) return null;
   if (authStore) {
     const s = authStore.getSession(value);
-    if (s) return s;
+    if (s) {
+      return isAllowedAuthSession(s) ? s : null;
+    }
   }
   if (sessions) {
     const entry = sessions.get(value);
@@ -243,12 +332,18 @@ function getSession(req, sessions, authStore = null) {
       sessions.delete(value);
       return null;
     }
-    return typeof entry === 'object' ? entry : { expiresAt: entry, user: null, authType: 'local-dev' };
+    return isAllowedAuthSession(entry) ? entry : null;
   }
   return null;
 }
 
 function resolveConnectionUser(session) {
+  if (!session?.user && !DEV_AUTH_ENABLED) {
+    throw Object.assign(
+      new Error('Unauthorized'),
+      { statusCode: 401 }
+    );
+  }
   if (session?.user) {
     const memberId = session.user.memberId || session.user.id || null;
     return {
@@ -304,6 +399,9 @@ ${errorText}
 }
 
 function sendLoginPage(res, status = 200, error = '') {
+  if (!DEV_AUTH_ENABLED) {
+    return reply(res, 404, { error: 'Not found' });
+  }
   res.writeHead(status, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -631,7 +729,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/auth/lark/in-app-login' && req.method === 'POST') {
-      if (!isLocalRequest(req) || !sameOriginPost(req, config)) return reply(res, 403, { error: 'Invalid origin' });
+      if (!isAllowedWriteRequest(req, config)) return reply(res, 403, { error: 'Invalid origin' });
       let body;
       try {
         body = await jsonBody(req);
@@ -704,7 +802,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/auth/email/request-otp' && req.method === 'POST') {
-      if (!isLocalRequest(req) || !sameOriginPost(req, config)) {
+      if (!isAllowedWriteRequest(req, config)) {
         return reply(res, 403, { error: 'Invalid origin' });
       }
       let body;
@@ -724,7 +822,12 @@ export function createAppServer(config, lark = new LarkClient(config), options =
       }
 
       const normEmail = trimmedEmail.toLowerCase();
-      const clientIp = (req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || '127.0.0.1').trim();
+      const clientIp = getTrustedClientIp(req, config);
+      if (!clientIp) {
+        return reply(res, 403, {
+          error: 'Untrusted client address'
+        });
+      }
 
       // IP Rate Limit: max 10 requests / 15 minutes
       const ipLimit = authStore.checkRateLimit(`ip:${clientIp}`, 10, 900);
@@ -799,7 +902,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/auth/email/verify-otp' && req.method === 'POST') {
-      if (!isLocalRequest(req) || !sameOriginPost(req, config)) {
+      if (!isAllowedWriteRequest(req, config)) {
         return reply(res, 403, { error: 'Invalid origin' });
       }
       let body;
@@ -871,6 +974,9 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/dev-login') {
+      if (!DEV_AUTH_ENABLED) {
+        return reply(res, 404, { error: 'Not found' });
+      }
       if (!isLocalRequest(req)) return reply(res, 403, { error: 'Local preview only' });
       if (req.method === 'GET') {
         return hasSession(req, sessions, authStore) ? redirect(res, '/index.html') : sendLoginPage(res);
@@ -909,7 +1015,10 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if ((url.pathname === '/auth/logout' || url.pathname === '/dev-logout') && req.method === 'POST') {
-      if (!isLocalRequest(req) || !sameOriginPost(req, config)) return reply(res, 403, { error: 'Invalid origin' });
+      if (url.pathname === '/dev-logout' && !DEV_AUTH_ENABLED) {
+        return reply(res, 404, { error: 'Not found' });
+      }
+      if (!isAllowedWriteRequest(req, config)) return reply(res, 403, { error: 'Invalid origin' });
       const token = cookieValue(req, COOKIE_NAME);
       if (token) {
         sessions.delete(token);
@@ -924,12 +1033,12 @@ export function createAppServer(config, lark = new LarkClient(config), options =
         });
         return res.end(JSON.stringify({ success: true }));
       }
-      return redirect(res, '/dev-login', createSessionCookie('', 0, req, config));
+      return redirect(res, DEV_AUTH_ENABLED ? '/dev-login' : '/index.html', createSessionCookie('', 0, req, config));
     }
 
     if (url.pathname === '/api/v1/me' && req.method === 'GET') {
       const session = getSession(req, sessions, authStore);
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!session && !hasTestKey) {
         return reply(res, 401, { authenticated: false, error: 'Unauthorized' });
       }
@@ -958,7 +1067,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     if (url.pathname === '/api/v1/integrations/forms' && req.method === 'GET') {
       const session = getSession(req, sessions, authStore);
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized' });
       }
@@ -970,8 +1079,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/api/v1/admin/integrations/forms' && req.method === 'PUT') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1025,7 +1134,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     // ===== PHIÊN CHỢ TRI THỨC (BOOTHS) APIs =====
     if (url.pathname === '/api/v1/booths' && req.method === 'GET') {
       const session = getSession(req, sessions, authStore);
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized: Vui lòng đăng nhập' });
       }
@@ -1059,7 +1168,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     // POST /api/v1/booths/sync – Force invalidate cache và fetch lại từ Lark Base
     if (url.pathname === '/api/v1/booths/sync' && req.method === 'POST') {
       const session = getSession(req, sessions, authStore);
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized' });
       }
@@ -1085,7 +1194,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     if (url.pathname === '/api/v1/booths/mine' && req.method === 'GET') {
       const session = getSession(req, sessions, authStore);
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized: Vui lòng đăng nhập' });
       }
@@ -1117,8 +1226,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/api/v1/booths' && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1260,8 +1369,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     const boothPatchMatch = /^\/api\/v1\/booths\/([A-Za-z0-9_-]{10,64})$/.exec(url.pathname);
     if (boothPatchMatch && req.method === 'PATCH') {
       const recordId = boothPatchMatch[1];
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1365,7 +1474,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     if (url.pathname === '/api/v1/matching/context' && req.method === 'GET') {
       const session = getSession(req, sessions, authStore);
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized: Vui lòng đăng nhập' });
       }
@@ -1397,7 +1506,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     if (url.pathname === '/api/v1/matching/suggestions' && req.method === 'GET') {
       const session = getSession(req, sessions, authStore);
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized: Vui lòng đăng nhập' });
       }
@@ -1480,7 +1589,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/api/v1/learning-sessions' && req.method === 'GET') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       const session = getSession(req, sessions, authStore);
       if (!session && !hasTestKey) return reply(res, 401, { success: false, error: 'Unauthorized' });
       const sessionUser = resolveConnectionUser(session);
@@ -1494,8 +1603,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/api/v1/learning-sessions' && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1524,8 +1633,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     const learningRespondMatch = /^\/api\/v1\/learning-sessions\/([A-Za-z0-9_-]{1,128})\/respond$/.exec(url.pathname);
     if (learningRespondMatch && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1550,8 +1659,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     const learningCompleteMatch = /^\/api\/v1\/learning-sessions\/([A-Za-z0-9_-]{1,128})\/complete$/.exec(url.pathname);
     if (learningCompleteMatch && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1569,7 +1678,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     const learningResultsMatch = /^\/api\/v1\/learning-sessions\/([A-Za-z0-9_-]{1,128})\/results$/.exec(url.pathname);
     if (learningResultsMatch && req.method === 'GET') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       const session = getSession(req, sessions, authStore);
       if (!session && !hasTestKey) return reply(res, 401, { success: false, error: 'Unauthorized' });
       try {
@@ -1585,8 +1694,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (learningResultsMatch && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1617,13 +1726,13 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     // POST /api/v1/connections - Create connection request
     if (url.pathname === '/api/v1/connections' && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
       if (!session && !hasTestKey) {
-        return reply(res, 401, { success: false, error: 'Unauthorized: Vui lòng đăng nhập để gửi lời mời kết nối' });
+        return reply(res, 401, { success: false, error: 'Unauthorized: Vui lòng đăng nhập để thực hiện kết nối' });
       }
       let body;
       try {
@@ -1642,15 +1751,21 @@ export function createAppServer(config, lark = new LarkClient(config), options =
           connectionType: body?.connectionType || body?.type || 'personal',
           idempotencyKey: body?.idempotencyKey || req.headers['idempotency-key'] || null,
         });
-        return reply(res, 201, result);
+        if (typeof honorsService.invalidateCache === 'function') honorsService.invalidateCache();
+        return reply(res, result.deduplicated ? 200 : 201, result);
       } catch (err) {
-        return reply(res, err.statusCode || 500, { success: false, error: err.message });
+        return reply(res, err.statusCode || (err.name === 'LarkError' ? 502 : 500), {
+          success: false,
+          error: err.message,
+          ...(err.code ? { code: err.code } : {}),
+          ...(err.data ? { data: err.data } : {}),
+        });
       }
     }
 
     // GET /api/v1/connections/mine - List user's relevant connections
     if (url.pathname === '/api/v1/connections/mine' && req.method === 'GET') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       const session = getSession(req, sessions, authStore);
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized' });
@@ -1673,7 +1788,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     // GET /api/v1/connections/inbox - List pending connection requests for approver
     if (url.pathname === '/api/v1/connections/inbox' && req.method === 'GET') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       const session = getSession(req, sessions, authStore);
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized' });
@@ -1694,7 +1809,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
 
     // GET /api/v1/connections/notifications/count - Count pending inbox requests
     if (url.pathname === '/api/v1/connections/notifications/count' && req.method === 'GET') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       const session = getSession(req, sessions, authStore);
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized' });
@@ -1715,8 +1830,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     // POST /api/v1/connections/:id/respond - Accept or reject connection request
     const respondMatch = /^\/api\/v1\/connections\/([A-Za-z0-9_-]{1,64})\/respond$/.exec(url.pathname);
     if (respondMatch && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1739,17 +1854,18 @@ export function createAppServer(config, lark = new LarkClient(config), options =
           decision: body?.decision,
           note: body?.note,
         });
+        if (typeof honorsService.invalidateCache === 'function') honorsService.invalidateCache();
         return reply(res, 200, result);
       } catch (err) {
-        return reply(res, err.statusCode || 500, { success: false, error: err.message });
+        return reply(res, err.statusCode || (err.name === 'LarkError' ? 502 : 500), { success: false, error: err.message });
       }
     }
 
-    // POST /api/v1/connections/:id/cancel - Cancel connection request (sender only)
+    // POST /api/v1/connections/:id/cancel - Cancel active or pending connection (participants / village reps)
     const cancelMatch = /^\/api\/v1\/connections\/([A-Za-z0-9_-]{1,64})\/cancel$/.exec(url.pathname);
     if (cancelMatch && req.method === 'POST') {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
-      if (!hasTestKey && (!isLocalRequest(req) || !sameOriginPost(req, config))) {
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
         return reply(res, 403, { success: false, error: 'Invalid origin / Sec-Fetch-Site' });
       }
       const session = getSession(req, sessions, authStore);
@@ -1764,16 +1880,17 @@ export function createAppServer(config, lark = new LarkClient(config), options =
           isAdmin,
           id: cancelMatch[1],
         });
+        if (typeof honorsService.invalidateCache === 'function') honorsService.invalidateCache();
         return reply(res, 200, result);
       } catch (err) {
-        return reply(res, err.statusCode || 500, { success: false, error: err.message });
+        return reply(res, err.statusCode || (err.name === 'LarkError' ? 502 : 500), { success: false, error: err.message });
       }
     }
 
     // GET /api/v1/connections/:id - Connection detail
     const detailMatch = /^\/api\/v1\/connections\/([A-Za-z0-9_-]{1,64})$/.exec(url.pathname);
     if (detailMatch && req.method === 'GET' && !['mine', 'inbox', 'notifications'].includes(detailMatch[1])) {
-      const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       const session = getSession(req, sessions, authStore);
       if (!session && !hasTestKey) {
         return reply(res, 401, { success: false, error: 'Unauthorized' });
@@ -1793,23 +1910,26 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     if (url.pathname === '/' && req.method === 'GET') {
-      return redirect(res, hasSession(req, sessions, authStore) ? '/index.html' : '/dev-login');
+      return redirect(res, !DEV_AUTH_ENABLED ? '/index.html' : (hasSession(req, sessions, authStore) ? '/index.html' : '/dev-login'));
     }
 
     if (req.method === 'GET' && staticFiles.has(url.pathname)) {
+      if (!DEV_AUTH_ENABLED) {
+        return reply(res, 404, { error: 'Not found' });
+      }
       if (!isLocalRequest(req)) return reply(res, 403, { error: 'Local preview only' });
       if (!hasSession(req, sessions, authStore)) return redirect(res, '/dev-login');
       return sendStatic(res, ...staticFiles.get(url.pathname));
     }
 
-    if (!hasSession(req, sessions, authStore) && !sameKey(req.headers['x-internal-test-key'], config.testKey)) {
+    if (!hasSession(req, sessions, authStore) && !(DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey))) {
       return reply(res, 401, { error: 'Unauthorized (local session or server-side test key required)' });
     }
     if (req.method !== 'GET') return reply(res, 405, { error: 'Read-only API' });
     try {
       if (url.pathname === '/api/v1/villages') {
         const session = getSession(req, sessions, authStore);
-        const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+        const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
         const isAdmin = hasTestKey || isAdminUser(session, config);
         const allVillages = await getAllMappedVillages();
         const items = allVillages.map((v) => {
@@ -1826,7 +1946,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
       }
       if (url.pathname === '/api/v1/members') {
         const session = getSession(req, sessions, authStore);
-        const hasTestKey = sameKey(req.headers['x-internal-test-key'], config.testKey);
+        const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
         const isAdmin = hasTestKey || isAdminUser(session, config);
         const allMembers = await getAllMappedMembers();
         const userVillageId = session?.user?.villageId;

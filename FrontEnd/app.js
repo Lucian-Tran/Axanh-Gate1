@@ -22,8 +22,8 @@ const PAGE_LABELS = { home: ['Tổng quan', 'Phiên chợ tri thức'], villages
 const NAV = [['home', 'Tổng quan', 'home'], ['villages', 'Danh sách 11 Làng', 'grid'], ['members', 'Thành viên làng', 'users'], ['market', 'Phiên chợ tri thức', 'grid'], ['matches', 'Kết nối phù hợp', 'link'], ['network', 'Bản đồ kết nối', 'network'], ['schedule', 'Lịch cùng học', 'calendar'], ['library', 'Kho tri thức', 'book'], ['awards', 'Vinh danh', 'award'], ['gate1', 'Gate 1 Quán quân', 'shield'], ['forms', 'Hai biểu mẫu', 'form']];
 const EMPTY_STATE = { profiles: {}, connections: [], results: [], gate1: freshGateEntries(), settings: { registrationUrl: '', resultUrl: '', gate1Url: '', apiBase: '', larkBase: DEFAULT_BASE }, seeker: 'VIL-0005', matchMode: 'person', villageSeeker: '' };
 let STATE = loadState(); let currentPage = 'home'; let marketSearch = ''; let officeFilter = 'all'; let __modalAction = null;
-const LIVE = { loading: true, connected: false, error: '', villages: [], members: [], booths: [], boothsLoading: false, boothsError: '', currentUser: null, connections: [], inboxConnections: [], notificationCount: 0, connectionsLoading: false, learning: { loading: false, error: '', sessions: [], availableConnections: [], reportOptions: { applied: [], formats: [] } }, knowledge: { loading: false, error: '', items: [], diagnostics: {} }, honors: { loading: false, error: '', data: null } };
-let connectionsActiveTab = 'inbox'; // 'inbox' | 'sent' | 'accepted'
+const LIVE = { loading: true, connected: false, error: '', villages: [], members: [], booths: [], boothsLoading: false, boothsError: '', currentUser: null, connections: [], inboxConnections: [], notificationCount: 0, connectionsLoading: false, connectionsError: '', learning: { loading: false, error: '', sessions: [], availableConnections: [], reportOptions: { applied: [], formats: [] } }, knowledge: { loading: false, error: '', items: [], diagnostics: {} }, honors: { loading: false, error: '', data: null } };
+let connectionsActiveTab = 'accepted'; // 'accepted' | 'history' | 'inbox'
 const MATCHING = {
   loading: false,
   error: '',
@@ -47,7 +47,7 @@ let libraryAppliedFilter = 'all';
 function loadState() { try { const raw = localStorage.getItem(STORE_KEY); if (!raw) return structuredClone(EMPTY_STATE); const x = JSON.parse(raw); return { ...structuredClone(EMPTY_STATE), ...x, profiles: x.profiles || {}, connections: x.connections || [], results: x.results || [], gate1: Array.isArray(x.gate1) && x.gate1.length ? x.gate1 : freshGateEntries(), settings: { ...EMPTY_STATE.settings, ...x.settings } } } catch (e) { return structuredClone(EMPTY_STATE) } }
 function persist() { try { localStorage.setItem(STORE_KEY, JSON.stringify(STATE)) } catch (e) { toast('Không lưu được dữ liệu trong trình duyệt.', 'warn') } }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])) }
-function icon(name, size = 20) { const d = { bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-8h6v8"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', link: '<path d="M10 13a5 5 0 0 0 7 .3l3-3A5 5 0 0 0 13 3l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7-.3l-3 3A5 5 0 0 0 11 21l1.7-1.7"/>', network: '<circle cx="12" cy="12" r="3"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="M6 6l4 4m4 4 4 4M18 6l-4 4M10 14l-4 4"/>', calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/><path d="m9 16 2 2 4-4"/>', book: '<path d="M12 7c-2-2-5-2-9-2v15c4 0 7 0 9 2 2-2 5-2 9-2V5c-4 0-7 0-9 2z"/><path d="M12 7v15"/>', award: '<circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h3"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.5 1-1.9 3.2-1.7-.7a8 8 0 0 1-2.3 1.3l-.3 1.8h-3.6l-.4-1.8a8 8 0 0 1-2.3-1.3l-1.7.7L5 16.1l1.5-1A8 8 0 0 1 6.3 12l-1.5-1L6.7 7.7l1.7.8a8 8 0 0 1 2.3-1.4L11 5h3.6l.4 2.1a8 8 0 0 1 2.3 1.4l1.7-.8 1.9 3.3-1.5 1c.2 1 .2 2 0 3z"/>', check: '<path d="m4 12 5 5L20 6"/>', arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>', star: '<path d="m12 2 3.2 6.4 7.1 1-5.2 5.1 1.3 7.1-6.4-3.4-6.4 3.4 1.3-7.1-5.2-5.1 7.1-1z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>', users: '<circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 3a4 4 0 0 1 0 8m2 10v-3a7 7 0 0 0-3-5.7"/>', spark: '<path d="m12 2 2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/>', gift: '<rect x="3" y="9" width="18" height="12" rx="1"/><path d="M3 13h18M12 9v12M12 9s-7-2-7-5c0-3 6-2 7 5zm0 0s7-2 7-5c0-3-6-2-7 5z"/>', send: '<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 5 5"/>', external: '<path d="M14 4h6v6m0-6-9 9"/><path d="M19 14v6H4V5h6"/>', download: '<path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/>', close: '<path d="M5 5l14 14M19 5 5 19"/>', plus: '<path d="M12 5v14M5 12h14"/>', refresh: '<path d="M20 6v6h-6M4 18v-6h6"/><path d="M5 10a8 8 0 0 1 13-4l2 2M4 16l2 2a8 8 0 0 0 13-4"/>', info: '<circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10h.01"/>', play: '<path d="m7 4 14 8-14 8z"/>' }; return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:' + size + 'px;height:' + size + 'px;max-width:' + size + 'px;max-height:' + size + 'px;display:inline-block;vertical-align:middle;flex-shrink:0">' + (d[name] || d.info) + '</svg>' }
+function icon(name, size = 20) { const d = { bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-8h6v8"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', link: '<path d="M10 13a5 5 0 0 0 7 .3l3-3A5 5 0 0 0 13 3l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7-.3l-3 3A5 5 0 0 0 11 21l1.7-1.7"/>', userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', checkCircle: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>', unlink: '<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/>', network: '<circle cx="12" cy="12" r="3"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="M6 6l4 4m4 4 4 4M18 6l-4 4M10 14l-4 4"/>', calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/><path d="m9 16 2 2 4-4"/>', book: '<path d="M12 7c-2-2-5-2-9-2v15c4 0 7 0 9 2 2-2 5-2 9-2V5c-4 0-7 0-9 2z"/><path d="M12 7v15"/>', award: '<circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h3"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.5 1-1.9 3.2-1.7-.7a8 8 0 0 1-2.3 1.3l-.3 1.8h-3.6l-.4-1.8a8 8 0 0 1-2.3-1.3l-1.7.7L5 16.1l1.5-1A8 8 0 0 1 6.3 12l-1.5-1L6.7 7.7l1.7.8a8 8 0 0 1 2.3-1.4L11 5h3.6l.4 2.1a8 8 0 0 1 2.3 1.4l1.7-.8 1.9 3.3-1.5 1c.2 1 .2 2 0 3z"/>', check: '<path d="m4 12 5 5L20 6"/>', arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>', star: '<path d="m12 2 3.2 6.4 7.1 1-5.2 5.1 1.3 7.1-6.4-3.4-6.4 3.4 1.3-7.1-5.2-5.1 7.1-1z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>', users: '<circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 3a4 4 0 0 1 0 8m2 10v-3a7 7 0 0 0-3-5.7"/>', spark: '<path d="m12 2 2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/>', gift: '<rect x="3" y="9" width="18" height="12" rx="1"/><path d="M3 13h18M12 9v12M12 9s-7-2-7-5c0-3 6-2 7 5zm0 0s7-2 7-5c0-3-6-2-7 5z"/>', send: '<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 5 5"/>', external: '<path d="M14 4h6v6m0-6-9 9"/><path d="M19 14v6H4V5h6"/>', download: '<path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/>', close: '<path d="M5 5l14 14M19 5 5 19"/>', plus: '<path d="M12 5v14M5 12h14"/>', refresh: '<path d="M20 6v6h-6M4 18v-6h6"/><path d="M5 10a8 8 0 0 1 13-4l2 2M4 16l2 2a8 8 0 0 0 13-4"/>', info: '<circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10h.01"/>', play: '<path d="m7 4 14 8-14 8z"/>' }; return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:' + size + 'px;height:' + size + 'px;max-width:' + size + 'px;max-height:' + size + 'px;display:inline-block;vertical-align:middle;flex-shrink:0">' + (d[name] || d.info) + '</svg>' }
 function getPeople() { return SEED.people.map(p => ({ ...p, ...(STATE.profiles[p.id] || {}) })) }
 function person(id) { return getPeople().find(p => p.id === id) }
 function pic(p, size = 50) { return p.avatar ? '<img class="person-avatar" src="' + p.avatar + '" alt="Logo ' + esc(p.village) + '" style="height:' + size + 'px;width:' + size + 'px">' : '<div class="person-avatar" style="height:' + size + 'px;width:' + size + 'px">' + esc(p.office === 'HR' ? 'HR' : p.office === 'IT' ? 'IT' : 'AX') + '</div>' }
@@ -131,13 +131,15 @@ function renderNav() {
   document.querySelector('#navArea').innerHTML = '<div class="nav-section">KHÁM PHÁ</div><nav class="nav">' + NAV.map(([id, l, ico]) => '<button type="button" data-action="nav" data-page="' + id + '" class="' + (currentPage === id ? 'active' : '') + '"><span class="nav-ico">' + icon(ico) + '</span>' + l + '</button>').join('') + '</nav>' + systemNav;
 }
 function stats() {
-  const active = STATE.connections;
+  const active = Array.isArray(LIVE.connections)
+    ? LIVE.connections.filter(c => c.status === 'Accepted').length
+    : 0;
   const passed = gateCounts().passed;
   const gateValue = GATE1.loading || GATE1.error ? '—' : String(passed);
   return [
     { n: LIVE.connected ? String(LIVE.villages.length) : '—', label: 'Làng (Lark Base)', i: 'grid' },
     { n: LIVE.connected ? String(LIVE.members.length) : '—', label: 'Thành viên (Lark Base)', i: 'users' },
-    { n: String(active.length), label: 'Kết nối demo', i: 'link' },
+    { n: LIVE.connected && !LIVE.connectionsLoading ? String(active) : '—', label: 'Kết nối đang hoạt động', i: 'link' },
     { n: gateValue, label: 'Làng đạt Gate 1', i: 'shield' },
   ].map(x => '<div class="stat"><div><div class="number">' + x.n + '</div><div class="label">' + x.label + '</div></div><div class="stat-icon">' + icon(x.i, 22) + '</div></div>').join('');
 }
@@ -194,7 +196,22 @@ function home() {
 function personCard(p) { return '<article class="person-card"><div class="person-head">' + pic(p, 57) + '<div><b>' + esc(p.name) + '</b><small>' + esc(p.village) + ' · ' + esc(p.office) + '</small></div><span class="kind-tag">' + (p.confirmed ? 'Đã xác nhận' : 'DEMO') + '</span></div><div class="offerneed"><div><span class="row-label">' + icon('gift', 11) + ' Có thể chia sẻ</span><strong>' + esc(p.offer) + '</strong></div><div class="tags">' + (p.offerTags || []).map(t => '<span class="tag teal">' + esc(t) + '</span>').join('') + '</div><div><span class="row-label">' + icon('book', 11) + ' Muốn học</span><strong>' + esc(p.need) + '</strong></div></div><button class="btn small" data-action="profile" data-id="' + p.id + '">Xem hồ sơ ' + icon('arrow', 15) + '</button></article>' }
 let marketTab = 'personal';
 
+function formatPreferredSlot(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
 function personalBoothCard(b) {
+  const slotText = formatPreferredSlot(b.availability);
   const avatarHtml = b.authorAvatarUrl
     ? '<img src="' + esc(b.authorAvatarUrl) + '" alt="' + esc(b.authorName) + '" style="width:52px;height:52px;object-fit:cover;border-radius:50%;display:block" onerror="this.style.display=\'none\';">'
     : '<div style="width:52px;height:52px;border-radius:50%;background:#1a3a6e;display:grid;place-items:center;color:#fff;font-weight:700;font-size:17px">' + esc((b.authorName || 'AX')[0].toUpperCase()) + '</div>';
@@ -214,6 +231,7 @@ function personalBoothCard(b) {
     + '<div><span class="row-label">' + icon('book', 11) + ' Muốn học</span><strong>' + esc(b.need || '—') + '</strong></div>'
     + '<div class="tags"><span class="tag">' + esc(b.needTag || '') + '</span></div>'
     + (b.preferredFormat ? '<div><span class="row-label">' + icon('link', 11) + ' Hình thức</span><small>' + esc(b.preferredFormat) + '</small></div>' : '')
+    + (slotText ? '<div><span class="row-label">' + icon('clock', 11) + ' Khung giờ ưu tiên</span><small>' + esc(slotText) + '</small></div>' : '')
     + '</div>'
     + '</article>';
 }
@@ -259,6 +277,7 @@ function getVillageBoothConnections(booth) {
         iconUrl: otherVillage?.iconUrl || '',
         status: c.status,
         createdAt: c.createdAt,
+        connObj: c,
       });
     }
   });
@@ -267,6 +286,7 @@ function getVillageBoothConnections(booth) {
 }
 
 function villageBoothCard(b) {
+  const slotText = formatPreferredSlot(b.availability);
   const v = LIVE.villages.find(x => x.id === b.villageId || (b.authorVillageName && x.name === b.authorVillageName));
   const logoUrl = b.villageIconUrl || v?.iconUrl;
   const villageName = b.villageName || b.authorVillageName || v?.name || 'Làng';
@@ -301,6 +321,7 @@ function villageBoothCard(b) {
     + '<div><span class="row-label">' + icon('book', 11) + ' Làng mong muốn học</span><strong>' + esc(b.need || '—') + '</strong></div>'
     + '<div class="tags"><span class="tag gold">' + esc(b.needTag || '') + '</span></div>'
     + (b.preferredFormat ? '<div><span class="row-label">' + icon('link', 11) + ' Hình thức</span><small>' + esc(b.preferredFormat) + '</small></div>' : '')
+    + (slotText ? '<div><span class="row-label">' + icon('clock', 11) + ' Khung giờ ưu tiên</span><small>' + esc(slotText) + '</small></div>' : '')
     + '</div>'
     + '<button type="button" data-action="open-village-connections" data-id="' + esc(boothKey) + '" style="width:100%;margin-top:10px;padding:8px 10px;border:1px solid #dbeafe;border-radius:10px;background:#f8fbff;display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer">'
     + '<span style="font-size:10px;font-weight:800;letter-spacing:.04em;color:#315b87;white-space:nowrap">🔗 LÀNG ĐÃ KẾT NỐI</span>'
@@ -308,7 +329,7 @@ function villageBoothCard(b) {
     + '<span style="display:flex;align-items:center">' + connectedVillages + moreVillages + '</span>'
     + '<span style="display:flex;flex-direction:column;gap:2px;font-size:10px;white-space:nowrap">'
     + '<b style="color:#15803d">✓ ' + acceptedConnections + ' đã kết nối</b>'
-    + '<b style="color:#b45309">◷ ' + pendingConnections + ' chờ xác nhận</b>'
+    + (pendingConnections > 0 ? '<b style="color:#b45309">◷ ' + pendingConnections + ' chờ duyệt (cũ)</b>' : '')
     + '</span><span style="color:#2563eb;font-size:18px">›</span>'
     + '</span></button>'
     + '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:#64748b">'
@@ -468,51 +489,224 @@ async function loadMatching(resetBooth = false) {
   }
 }
 
-function getExistingLiveConnection(s, curBooth, isPersonal) {
-  if (!s || !curBooth) return null;
+function matchesConnectionPair(c, s, curBooth, isPersonal) {
   const sBooth = s.targetBoothId || s.targetRecordId || s.boothId;
   const curBoothId = curBooth.boothId || curBooth.recordId;
-  if (Array.isArray(LIVE.connections)) {
-    const live = LIVE.connections.find(c => {
-      const srcId = c.sourceBooth?.boothId || c.sourceBooth?.recordId;
-      const tgtId = c.targetBooth?.boothId || c.targetBooth?.recordId;
-      if (srcId === curBoothId && tgtId === sBooth) return true;
-      if (srcId === sBooth && tgtId === curBoothId) return true;
-      if (isPersonal && c.connectionType === 'personal') {
-        if (c.requestedBy === curBooth.authorMemberId && c.targetMemberId === s.targetMemberId) return true;
-        if (c.requestedBy === s.targetMemberId && c.targetMemberId === curBooth.authorMemberId) return true;
-      }
-      if (!isPersonal && c.connectionType === 'village') {
-        const sVil = curBooth.villageId;
-        const tVil = s.targetVillageId;
-        if (sVil && tVil && ((c.sourceVillageId === sVil && c.targetVillageId === tVil) || (c.sourceVillageId === tVil && c.targetVillageId === sVil))) return true;
-      }
-      return false;
-    });
-    if (live) return live;
+  const srcId = c.sourceBooth?.boothId || c.sourceBooth?.recordId;
+  const tgtId = c.targetBooth?.boothId || c.targetBooth?.recordId;
+  if (srcId && tgtId && curBoothId && sBooth) {
+    if (srcId === curBoothId && tgtId === sBooth) return true;
+    if (srcId === sBooth && tgtId === curBoothId) return true;
   }
-  if (Array.isArray(STATE.connections)) {
-    const found = STATE.connections.find(c => {
-      if (isPersonal && (c.type || 'person') === 'person') {
-        return (c.seeker === curBooth.authorMemberId && c.helper === s.targetMemberId) ||
-          (c.seekerName && c.helperName && c.seekerName.toLowerCase() === curBooth.authorName?.toLowerCase() && c.helperName.toLowerCase() === s.displayName?.toLowerCase());
-      }
-      if (!isPersonal && (c.type || 'person') === 'village') {
-        const sv = curBooth.villageName;
-        const hv = s.targetVillageName;
-        return (c.seekerVillage === sv && c.helperVillage === hv) ||
-          (c.seekerVillageId && c.helperVillageId && c.seekerVillageId === curBooth.villageId && c.helperVillageId === s.targetVillageId);
-      }
-      return false;
-    });
-    if (found) return { status: found.status === 'completed' ? 'Accepted' : 'Pending', isLocal: true };
+  // Fallback: so sánh qua sourceBoothRecordId / targetBoothRecordId khi sourceBooth/targetBooth không được resolve
+  const srcRecId = c.sourceBoothRecordId;
+  const tgtRecId = c.targetBoothRecordId;
+  const curRecId = curBooth.recordId;
+  const sRecId = s.targetRecordId;
+  if (srcRecId && tgtRecId && curRecId) {
+    if (srcRecId === curRecId && (tgtRecId === sRecId || tgtId === sBooth)) return true;
+    if ((srcRecId === sRecId || srcId === sBooth) && tgtRecId === curRecId) return true;
   }
-  return null;
+  if (isPersonal && c.connectionType === 'personal') {
+    const cA = c.sourceBooth?.authorMemberId || c.requestedBy;
+    const cB = c.targetMemberId || c.targetBooth?.authorMemberId;
+    if (cA && cB && curBooth.authorMemberId && s.targetMemberId) {
+      if ((cA === curBooth.authorMemberId && cB === s.targetMemberId) ||
+          (cA === s.targetMemberId && cB === curBooth.authorMemberId)) {
+        return true;
+      }
+    }
+    // Fallback: so sánh requestedBy với LIVE.currentUser.memberId
+    if (c.requestedBy && curBoothId && sBooth) {
+      if ((c.requestedBy === LIVE.currentUser?.memberId && (tgtId === sBooth || tgtRecId === sRecId)) ||
+          (c.targetMemberId === LIVE.currentUser?.memberId && (srcId === sBooth || srcRecId === sRecId))) {
+        return true;
+      }
+    }
+  }
+  if (!isPersonal && c.connectionType === 'village') {
+    const sVil = curBooth.villageId;
+    const tVil = s.targetVillageId;
+    const cSrcVil = c.sourceVillageId || c.sourceBooth?.villageId;
+    const cTgtVil = c.targetVillageId || c.targetBooth?.villageId;
+    if (sVil && tVil && ((cSrcVil === sVil && cTgtVil === tVil) || (cSrcVil === tVil && cTgtVil === sVil))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getExistingLiveConnection(s, curBooth, isPersonal) {
+  if (!s || !curBooth || !Array.isArray(LIVE.connections)) return null;
+  const pairMatches = LIVE.connections.filter(c => matchesConnectionPair(c, s, curBooth, isPersonal));
+  // Prioritize active Accepted connection, then legacy Pending; ignore Cancelled/Rejected so user can reconnect
+  return pairMatches.find(c => c.status === 'Accepted')
+    || pairMatches.find(c => c.status === 'Pending')
+    || null;
 }
 
 function isLiveMatched(s, curBooth, isPersonal) {
   const existing = getExistingLiveConnection(s, curBooth, isPersonal);
-  return Boolean(existing && (existing.status === 'Accepted' || existing.status === 'Pending'));
+  return Boolean(existing && existing.status === 'Accepted');
+}
+
+function isVillageLeaderUser(villageId, user = LIVE.currentUser) {
+  if (!villageId || !user) return false;
+  const v = (LIVE.villages || []).find(item => item.id === villageId);
+  if (!v) return false;
+  if (v.leaderOpenId && user.larkOpenId && v.leaderOpenId === user.larkOpenId) return true;
+  if (v.leader && user.name) {
+    return v.leader.trim().toLowerCase() === user.name.trim().toLowerCase();
+  }
+  return false;
+}
+
+function canCancelConnection(conn, user = LIVE.currentUser) {
+  const uid = user?.memberId || user?.id;
+  if (!conn || !uid) return false;
+  if (conn.status !== 'Accepted' && conn.status !== 'Pending') return false;
+  if (conn.connectionType === 'personal') {
+    return [
+      conn.requestedBy,
+      conn.targetMemberId,
+      conn.approverMemberId,
+      conn.sourceBooth?.authorMemberId,
+      conn.targetBooth?.authorMemberId,
+    ].some(id => id && id === uid);
+  }
+  return [
+    conn.requestedBy,
+    conn.approverMemberId,
+  ].some(id => id && id === uid)
+    || isVillageLeaderUser(conn.sourceVillageId || conn.sourceBooth?.villageId, user)
+    || isVillageLeaderUser(conn.targetVillageId || conn.targetBooth?.villageId, user);
+}
+
+function isConnectionParticipant(conn, user = LIVE.currentUser) {
+  const uid = user?.memberId || user?.id;
+  if (!conn || !uid) return false;
+  return [conn.requestedBy, conn.targetMemberId, conn.approverMemberId].some(id => id && id === uid);
+}
+
+/**
+ * Render nút "Hủy kết nối" thay cho badge "Đã kết nối" khi người dùng có quyền hủy.
+ */
+function renderAcceptedBadgeOrCancelBtn({ connId, label, type = 'personal', canCancel, small = true, iconSize = 13 }) {
+  if (canCancel) {
+    return '<button type="button" class="btn' + (small ? ' small' : '') + ' btn-cancel-outline" data-action="prompt-cancel-connection" data-id="' + esc(connId) + '" data-label="' + esc(label) + '" data-type="' + esc(type) + '">' + icon('unlink', iconSize) + ' Hủy kết nối</button>';
+  }
+  return '<span class="conn-status-accepted">' + icon('checkCircle', iconSize) + ' Đã kết nối</span>';
+}
+
+function getConnectionPeerLabel(conn, myMemberId = LIVE.currentUser?.memberId, myVillageId = LIVE.currentUser?.villageId) {
+  if (!conn) return 'đối tác';
+  if (conn.connectionType === 'village') {
+    const srcId = conn.sourceVillageId || conn.sourceBooth?.villageId;
+    const isSrc = (myVillageId && srcId === myVillageId) || (myMemberId && conn.requestedBy === myMemberId);
+    return isSrc
+      ? (conn.targetVillageName || conn.targetBooth?.villageName || conn.targetVillageId || 'Làng')
+      : (conn.seekerVillageName || conn.sourceBooth?.villageName || conn.sourceVillageId || 'Làng');
+  }
+  const srcMem = conn.sourceBooth?.authorMemberId || conn.requestedBy;
+  const isSrc = myMemberId && srcMem === myMemberId;
+  return isSrc
+    ? (conn.targetName || conn.targetBooth?.authorName || conn.targetMemberId || 'thành viên')
+    : (conn.seekerName || conn.sourceBooth?.authorName || conn.requestedBy || 'thành viên');
+}
+
+const IN_FLIGHT_CONNECT = new Map();
+let inFlightCancelId = null;
+
+function openCancelConnectionModal({ connId, targetLabel, connectionType = 'personal' }) {
+  if (!connId) return;
+  const label = targetLabel || (connectionType === 'village' ? 'Làng này' : 'thành viên này');
+  const title = 'Hủy kết nối?';
+  const bodyHtml = '<div class="confirm-unlink-head">'
+    + '<div class="confirm-unlink-icon">' + icon('unlink', 22) + '</div>'
+    + '<div style="flex:1;min-width:0">'
+    + '<p style="margin:0;font-size:14.5px;line-height:1.6;color:#1e293b">'
+    + 'Bạn có chắc chắn muốn hủy kết nối với <b>' + esc(label) + '</b> không? Bạn có thể kết nối lại bất cứ lúc nào.'
+    + '</p>'
+    + '<div id="cancelConnModalError" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:12.5px;font-weight:600"></div>'
+    + '</div>'
+    + '</div>';
+  const footerHtml = '<button type="button" class="btn" id="cancelConnBackBtn" data-action="close-modal">Quay lại</button>'
+    + '<button type="button" class="btn btn-danger-solid" id="cancelConnConfirmBtn" data-action="confirm-cancel-connection" data-id="' + esc(connId) + '">Hủy kết nối</button>';
+  openModal(title, bodyHtml, footerHtml);
+  setTimeout(() => {
+    const backBtn = document.getElementById('cancelConnBackBtn');
+    if (backBtn) backBtn.focus();
+  }, 0);
+}
+
+async function confirmCancelConnection(connId) {
+  if (!connId || inFlightCancelId === connId) return;
+  const api = window.AXANH_LIVE_API;
+  if (!api || typeof api.cancelConnection !== 'function') {
+    toast('Dịch vụ kết nối chưa sẵn sàng. Vui lòng thử lại sau.', 'warn');
+    return;
+  }
+
+  inFlightCancelId = connId;
+  const confirmBtn = document.getElementById('cancelConnConfirmBtn');
+  const backBtn = document.getElementById('cancelConnBackBtn');
+  const errEl = document.getElementById('cancelConnModalError');
+  if (errEl) {
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+  }
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></span> Đang hủy kết nối...';
+  }
+  if (backBtn) backBtn.disabled = true;
+
+  try {
+    await api.cancelConnection(connId);
+    inFlightCancelId = null;
+    closeModal();
+    toast('Đã hủy kết nối', 'good');
+    await loadLiveConnections();
+    if (LIVE.learning.sessions.length > 0 || LIVE.learning.availableConnections.length > 0 || currentPage === 'schedule') {
+      loadLearningData();
+    }
+    render();
+  } catch (err) {
+    console.error('[Connection] Error cancelling connection:', err);
+    if (err?.status === 401) {
+      inFlightCancelId = null;
+      showSessionExpiredModal();
+      return;
+    }
+    const msg = err?.message || 'Không thể hủy kết nối. Vui lòng thử lại.';
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.style.display = 'block';
+    }
+    toast(msg, 'warn');
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Hủy kết nối';
+    }
+    if (backBtn) backBtn.disabled = false;
+  } finally {
+    inFlightCancelId = null;
+  }
+}
+
+function showSessionExpiredModal() {
+  openModal(
+    'Phiên đăng nhập đã hết hạn',
+    '<div style="text-align:center;padding:14px 4px">'
+    + '<div style="font-size:38px;margin-bottom:12px">⌛</div>'
+    + '<h3 style="margin:0 0 8px;font-size:16px;color:var(--navy)">Phiên đăng nhập đã hết hạn</h3>'
+    + '<p style="font-size:13.5px;color:#64748b;line-height:1.5;margin:0 0 16px">'
+    + 'Phiên đăng nhập của bạn đã hết hạn hoặc cookie bảo mật đã hết hiệu lực.<br>'
+    + 'Vui lòng đăng nhập lại để tiếp tục thao tác với dữ liệu kết nối trên Lark Base.'
+    + '</p>'
+    + '</div>',
+    '<button class="btn btn-primary" data-action="re-login" style="width:100%;justify-content:center">Đăng nhập lại ngay</button>'
+  );
 }
 
 async function createLiveMatch(idx) {
@@ -530,7 +724,7 @@ async function createLiveMatch(idx) {
       + '<div style="font-size:38px;margin-bottom:12px">🔒</div>'
       + '<h3 style="margin:0 0 8px;font-size:16px;color:var(--navy)">Bạn chưa đăng nhập</h3>'
       + '<p style="font-size:13.5px;color:#64748b;line-height:1.5;margin:0 0 16px">'
-      + 'Đề xuất kết nối sẽ được ghi trực tiếp vào Lark Base (<b>T14_Connections</b>) dưới danh nghĩa thành viên của bạn.<br>'
+      + 'Kết nối sẽ được ghi trực tiếp vào Lark Base (<b>T14_Connections</b>) dưới danh nghĩa thành viên của bạn.<br>'
       + 'Vui lòng đăng nhập bằng Email OTP hoặc tài khoản Lark để tiếp tục.'
       + '</p>'
       + '</div>',
@@ -541,75 +735,71 @@ async function createLiveMatch(idx) {
 
   const existing = getExistingLiveConnection(s, curBooth, isPersonal);
   if (existing && existing.status === 'Accepted') {
-    toast(isPersonal ? 'Hai người đã có một kết nối chính thức.' : 'Hai Làng đã có một kết nối chính thức.', 'warn');
-    return;
-  }
-  if (existing && existing.status === 'Pending') {
-    toast('Đã có lời mời kết nối đang chờ xác nhận.', 'warn');
+    toast(isPersonal ? 'Hai người đã kết nối trước đó.' : 'Hai Làng đã kết nối trước đó.', 'warn');
     return;
   }
 
   const targetBoothId = s.targetBoothId || s.targetRecordId || s.boothId;
   if (!targetBoothId) {
-    toast('Không xác định được mã gian hàng đích để kết nối.', 'error');
+    toast('Không xác định được mã gian hàng đích để kết nối.', 'warn');
     return;
   }
+
+  const sourceBoothId = curBooth.boothId || curBooth.recordId;
+  const lockKey = `${sourceBoothId}:${targetBoothId}`;
+  if (IN_FLIGHT_CONNECT.has(lockKey)) return;
+
+  const idempotencyKey = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : ('conn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
+  IN_FLIGHT_CONNECT.set(lockKey, idempotencyKey);
 
   const buttons = document.querySelectorAll('[data-action="create-live-match"][data-idx="' + idx + '"]');
   buttons.forEach(btn => {
     btn.disabled = true;
     btn.dataset.origHtml = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></span> Đang gửi...';
+    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></span> Đang kết nối...';
   });
 
   try {
-    if (window.AXANH_LIVE_API && window.AXANH_LIVE_API.createConnection) {
-      await window.AXANH_LIVE_API.createConnection({
-        sourceBoothId: curBooth.boothId || curBooth.recordId,
-        targetBoothId,
-        connectionType: isPersonal ? 'personal' : 'village',
-      });
-      toast((isPersonal ? 'Đã gửi lời mời kết nối tới ' + s.displayName : 'Đã gửi lời mời kết nối tới ' + s.targetVillageName) + '! Trạng thái: Chờ xác nhận.', 'success');
-      await loadLiveConnections();
-    } else {
-      const newConn = {
-        id: 'KEX-' + Date.now(),
-        type: isPersonal ? 'person' : 'village',
-        seeker: curBooth.authorMemberId || curBooth.villageId,
-        helper: s.targetMemberId || s.targetVillageId,
-        seekerName: curBooth.authorName || curBooth.villageName,
-        helperName: s.displayName || s.targetVillageName,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-      STATE.connections.unshift(newConn);
-      persist();
-      toast('Đã đề xuất kết nối.', 'info');
+    if (!window.AXANH_LIVE_API ||
+        typeof window.AXANH_LIVE_API.createConnection !== 'function') {
+      throw new Error('Dịch vụ kết nối chưa sẵn sàng. Vui lòng thử lại sau.');
+    }
+
+    await window.AXANH_LIVE_API.createConnection({
+      sourceBoothId,
+      targetBoothId,
+      connectionType: isPersonal ? 'personal' : 'village',
+      idempotencyKey,
+    });
+
+    toast('Kết nối thành công', 'good');
+
+    await loadLiveConnections();
+    if (LIVE.learning.sessions.length > 0 || LIVE.learning.availableConnections.length > 0 || currentPage === 'schedule') {
+      loadLearningData();
     }
     closeModal();
     render();
   } catch (err) {
     console.error('[Connection] Error creating connection:', err);
-    if (err.status === 401 || err.message?.includes('Phiên đăng nhập') || err.message?.includes('Unauthorized')) {
-      openModal(
-        'Phiên đăng nhập đã hết hạn',
-        '<div style="text-align:center;padding:14px 4px">'
-        + '<div style="font-size:38px;margin-bottom:12px">⌛</div>'
-        + '<h3 style="margin:0 0 8px;font-size:16px;color:var(--navy)">Phiên đăng nhập đã hết hạn</h3>'
-        + '<p style="font-size:13.5px;color:#64748b;line-height:1.5;margin:0 0 16px">'
-        + 'Phiên đăng nhập của bạn đã hết hạn do backend được khởi động lại hoặc cookie bảo mật đã hết hiệu lực.<br>'
-        + 'Vui lòng đăng nhập lại để tiếp tục gửi và xác nhận lời mời kết nối vào Lark Base.'
-        + '</p>'
-        + '</div>',
-        '<button class="btn btn-primary" data-action="re-login" style="width:100%;justify-content:center">Đăng nhập lại ngay</button>'
-      );
+    if (err?.status === 401) {
+      showSessionExpiredModal();
+    } else if (err?.status === 409 && err?.code === 'ALREADY_CONNECTED') {
+      await loadLiveConnections();
+      toast(err.message || 'Hai bên đã kết nối trước đó.', 'warn');
+      closeModal();
+      render();
     } else {
-      toast(err.message || 'Không thể tạo lời mời kết nối.', 'error');
+      toast(err?.message || 'Không thể thực hiện kết nối. Vui lòng thử lại.', 'warn');
     }
     buttons.forEach(btn => {
       btn.disabled = false;
-      btn.innerHTML = btn.dataset.origHtml || (icon('link', 14) + ' Đề xuất kết nối');
+      btn.innerHTML = btn.dataset.origHtml || (icon('userPlus', 14) + ' Kết nối');
     });
+  } finally {
+    IN_FLIGHT_CONNECT.delete(lockKey);
   }
 }
 
@@ -621,9 +811,9 @@ function showMatchDetailModal(idx) {
   const isVillage = !isPersonal;
   const booths = isPersonal ? (MATCHING.context?.personalBooths || []) : (MATCHING.context?.villageBooths || []);
   const curBooth = booths.find(b => b.boothId === MATCHING.selectedBoothId) || booths[0];
-  const already = isLiveMatched(s, curBooth, isPersonal);
 
-  const title = isVillage ? ('Chi tiết kết nối · ' + esc(s.targetVillageName)) : ('Chi tiết kết nối · ' + esc(s.displayName));
+  const targetDisplayName = isVillage ? s.targetVillageName : s.displayName;
+  const title = 'Chi tiết kết nối · ' + esc(targetDisplayName);
   const avatarHtml = isVillage
     ? villageLogoHtml(s.targetVillageIconUrl, s.targetVillageName, 64)
     : memberAvatarHtml(s.avatarUrl, s.displayName, 64);
@@ -642,10 +832,15 @@ function showMatchDetailModal(idx) {
     ? '<span class="tag gold" style="font-size:13px;font-weight:700">' + s.matchScore + ' / 100 điểm</span>'
     : '<span class="tag" style="background:#f1f5f9;color:#475569;font-size:12px;font-weight:600">Gian hàng tham khảo</span>';
 
+  const existing = getExistingLiveConnection(s, curBooth, isPersonal);
+  const hintHtml = (existing && existing.status === 'Accepted')
+    ? '✅ Hai bên đã kết nối chính thức. Bạn có thể đặt lịch cùng học hoặc hủy kết nối nếu cần.'
+    : 'ℹ️ <b>Gợi ý:</b> Bấm "Kết nối" bên dưới để kết nối trực tiếp ngay lập tức trên Bản đồ tri thức AXANH và Lịch cùng học.';
+
   const bodyHtml = '<div class="person-head" style="margin-bottom:20px;display:flex;align-items:center;gap:14px">'
     + avatarHtml
     + '<div>'
-    + '  <b style="font-size:17px">' + esc(isVillage ? s.targetVillageName : s.displayName) + '</b>'
+    + '  <b style="font-size:17px">' + esc(targetDisplayName) + '</b>'
     + '  <div style="color:#64748b;font-size:13px;margin-top:2px">' + subLine + '</div>'
     + '</div>'
     + '<div style="margin-left:auto;text-align:right">'
@@ -660,26 +855,23 @@ function showMatchDetailModal(idx) {
     + '  <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">' + reasonsHtml + '</div>'
     + '</div>'
     + '<div class="note" style="margin-top:16px;background:#f0f7ff;border:1px solid #c7e0ff;color:#1e4c8a;border-radius:8px;padding:12px;font-size:13px;line-height:1.6">'
-    + '  ℹ️ <b>Gợi ý:</b> Bạn có thể bấm "Đề xuất kết nối" bên dưới để đưa vào danh sách kết nối trên Bản đồ tri thức AXANH và Lịch cùng học.'
+    + hintHtml
     + '</div>';
 
-  const existing = getExistingLiveConnection(s, curBooth, isPersonal);
   let actionBtnHtml = '';
-  if (existing) {
-    if (existing.status === 'Accepted') {
-      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#dcfce7;color:#15803d;font-size:12.5px;font-weight:700">✓ Đã kết nối</span>';
-    } else if (existing.status === 'Pending') {
-      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#fef3c7;color:#b45309;font-size:12.5px;font-weight:700">⏳ Chờ xác nhận</span>';
-    } else if (existing.status === 'Rejected') {
-      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#fee2e2;color:#b91c1c;font-size:12.5px;font-weight:700">✕ Đã từ chối</span>';
-    } else {
-      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#f1f5f9;color:#64748b;font-size:12.5px;font-weight:600">Đã hủy</span>';
-    }
+  if (existing && existing.status === 'Accepted') {
+    const canSch = isConnectionParticipant(existing);
+    const canCan = canCancelConnection(existing);
+    actionBtnHtml = renderAcceptedBadgeOrCancelBtn({ connId: existing.id, label: targetDisplayName, type: isPersonal ? 'personal' : 'village', canCancel: canCan, small: false, iconSize: 14 })
+      + (canSch ? '<button type="button" class="btn btn-primary" data-action="schedule-connection" data-id="' + esc(existing.id) + '">' + icon('calendar', 14) + ' Đặt lịch cùng học</button>' : '');
+  } else if (existing && existing.status === 'Pending') {
+    actionBtnHtml = '<span class="conn-status-legacy">⏳ Chờ duyệt (cũ)</span>'
+      + '<button type="button" class="btn btn-connect-blue" data-action="create-live-match" data-idx="' + idx + '">' + icon('userPlus', 14) + ' Kết nối</button>';
   } else {
-    actionBtnHtml = '<button class="btn btn-primary" data-action="create-live-match" data-idx="' + idx + '">' + icon('link') + ' Đề xuất kết nối ngay</button>';
+    actionBtnHtml = '<button type="button" class="btn btn-connect-blue" data-action="create-live-match" data-idx="' + idx + '">' + icon('userPlus', 14) + ' Kết nối</button>';
   }
 
-  const footerHtml = '<button class="btn" data-action="close-modal">Đóng</button>' + actionBtnHtml;
+  const footerHtml = '<button type="button" class="btn" data-action="close-modal">Đóng</button>' + actionBtnHtml;
 
   openModal(title, bodyHtml, footerHtml);
 }
@@ -923,19 +1115,18 @@ function matches() {
         }
 
         const existing = getExistingLiveConnection(s, curBooth, isPersonal);
+        const targetDisplayName = isPersonal ? s.displayName : s.targetVillageName;
         let matchButtonHtml = '';
-        if (existing) {
-          if (existing.status === 'Accepted') {
-            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#dcfce7;color:#15803d;font-size:12px;font-weight:700">✓ Đã kết nối</span>';
-          } else if (existing.status === 'Pending') {
-            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#fef3c7;color:#b45309;font-size:12px;font-weight:700">⏳ Chờ xác nhận</span>';
-          } else if (existing.status === 'Rejected') {
-            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#fee2e2;color:#b91c1c;font-size:12px;font-weight:700">✕ Đã từ chối</span>';
-          } else {
-            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#f1f5f9;color:#64748b;font-size:12px;font-weight:600">Đã hủy</span>';
-          }
+        if (existing && existing.status === 'Accepted') {
+          const canCancel = canCancelConnection(existing);
+          const canSch = isConnectionParticipant(existing);
+          matchButtonHtml = renderAcceptedBadgeOrCancelBtn({ connId: existing.id, label: targetDisplayName, type: isPersonal ? 'personal' : 'village', canCancel, small: true, iconSize: 13 })
+            + (canSch ? '<button type="button" class="btn small" data-action="schedule-connection" data-id="' + esc(existing.id) + '">' + icon('calendar', 13) + ' Đặt lịch</button>' : '');
+        } else if (existing && existing.status === 'Pending') {
+          matchButtonHtml = '<span class="conn-status-legacy">⏳ Chờ duyệt (cũ)</span>'
+            + '<button type="button" class="btn btn-connect-blue small" data-action="create-live-match" data-idx="' + idx + '">' + icon('userPlus', 14) + ' Kết nối</button>';
         } else {
-          matchButtonHtml = '<button class="btn btn-primary small" data-action="create-live-match" data-idx="' + idx + '">' + icon('link', 14) + ' Đề xuất kết nối</button>';
+          matchButtonHtml = '<button type="button" class="btn btn-connect-blue small" data-action="create-live-match" data-idx="' + idx + '">' + icon('userPlus', 14) + ' Kết nối</button>';
         }
 
         const scoreHtml = isMatched
@@ -976,119 +1167,116 @@ function matches() {
 }
 
 function renderConnectionsManager() {
-  const currentMemberId = LIVE.currentUser?.memberId;
   const inbox = Array.isArray(LIVE.inboxConnections) ? LIVE.inboxConnections : [];
   const allMine = Array.isArray(LIVE.connections) ? LIVE.connections : [];
-  const sent = allMine.filter(c => c.requestedBy === currentMemberId);
   const accepted = allMine.filter(c => c.status === 'Accepted');
+  const historyConns = allMine.filter(c => c.status === 'Cancelled' || c.status === 'Rejected');
+
+  // If inbox becomes empty while on inbox tab, switch cleanly to accepted tab
+  const activeTab = (connectionsActiveTab === 'inbox' && inbox.length === 0) ? 'accepted' : connectionsActiveTab;
 
   let listHtml = '';
-  if (connectionsActiveTab === 'inbox') {
-    if (inbox.length === 0) {
-      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Hộp thư trống. Hiện tại không có lời mời kết nối nào đang chờ bạn xác nhận.</p></div>';
-    } else {
-      listHtml = inbox.map(c => {
-        const isPers = c.connectionType === 'personal';
-        const senderName = c.sourceBooth?.authorName || c.requestedBy;
-        const senderVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '—';
-        const senderAv = c.sourceBooth?.authorAvatarUrl || null;
-        const avHtml = memberAvatarHtml(senderAv, senderName, 44);
-        const offer = c.sourceBooth?.offer || 'Chia sẻ kiến thức chuyên môn';
-        const need = c.sourceBooth?.need || 'Học hỏi và trao đổi';
-        const createdDate = c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : '';
+  if (activeTab === 'inbox' && inbox.length > 0) {
+    listHtml = inbox.map(c => {
+      const isPers = c.connectionType === 'personal';
+      const senderName = c.sourceBooth?.authorName || c.requestedBy;
+      const senderVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '—';
+      const senderAv = c.sourceBooth?.authorAvatarUrl || null;
+      const avHtml = memberAvatarHtml(senderAv, senderName, 44);
+      const offer = c.sourceBooth?.offer || 'Chia sẻ kiến thức chuyên môn';
+      const need = c.sourceBooth?.need || 'Học hỏi và trao đổi';
+      const createdDate = c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : '';
 
-        return '<div class="conn-item-card">'
+      return '<div class="conn-item-card">'
+        + '<div class="conn-item-left">'
+        + avHtml
+        + '<div style="min-width:0">'
+        + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        + '  <b style="font-size:14px;color:var(--navy)">' + esc(senderName) + '</b>'
+        + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Gian hàng Làng') + '</span>'
+        + '  <small style="color:#64748b">' + esc(senderVil) + '</small>'
+        + '</div>'
+        + '<div style="font-size:12.5px;color:#334155;margin-top:4px">'
+        + '  <span><b>Có thể chia sẻ:</b> ' + esc(offer) + '</span>'
+        + '  <span style="margin:0 6px;color:#cbd5e1">·</span>'
+        + '  <span><b>Muốn học:</b> ' + esc(need) + '</span>'
+        + '</div>'
+        + '<small style="color:#94a3b8;margin-top:4px;display:block">Yêu cầu cũ ngày: ' + esc(createdDate) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
+        + '</div>'
+        + '</div>'
+        + '<div class="conn-item-right">'
+        + '<button class="btn btn-primary small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Accepted" style="background:#166534;border-color:#166534">' + icon('check', 13) + ' Đồng ý</button>'
+        + '<button class="btn small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Rejected" style="color:#b91c1c;border-color:#fca5a5">' + icon('close', 13) + ' Từ chối</button>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  } else if (activeTab === 'history') {
+    if (historyConns.length === 0) {
+      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Chưa có lịch sử kết nối đã hủy hoặc từ chối.</p></div>';
+    } else {
+      listHtml = historyConns.map(c => {
+        const isPers = c.connectionType === 'personal';
+        const sName = isPers
+          ? (c.seekerName || c.sourceBooth?.authorName || c.requestedBy)
+          : (c.seekerVillageName || c.sourceBooth?.villageName || c.sourceVillageId || 'Làng');
+        const tName = isPers
+          ? (c.targetName || c.targetBooth?.authorName || c.targetMemberId)
+          : (c.targetVillageName || c.targetBooth?.villageName || c.targetVillageId || 'Làng');
+        const dateStr = (c.respondedAt || c.createdAt) ? new Date(c.respondedAt || c.createdAt).toLocaleDateString('vi-VN') : '';
+        const statusPill = c.status === 'Rejected'
+          ? '<span class="status-badge" style="background:#fee2e2;color:#b91c1c;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">✕ Đã từ chối (cũ)</span>'
+          : '<span class="status-badge" style="background:#f1f5f9;color:#64748b;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">Đã hủy</span>';
+
+        return '<div class="conn-item-card" style="opacity:0.82">'
           + '<div class="conn-item-left">'
-          + avHtml
+          + '<div style="width:38px;height:38px;border-radius:50%;background:#f1f5f9;color:#64748b;display:flex;align-items:center;justify-content:center;font-weight:700">' + icon('unlink', 17) + '</div>'
           + '<div style="min-width:0">'
           + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-          + '  <b style="font-size:14px;color:var(--navy)">' + esc(senderName) + '</b>'
-          + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Gian hàng Làng') + '</span>'
-          + '  <small style="color:#64748b">' + esc(senderVil) + '</small>'
+          + '  <b style="font-size:14px;color:var(--navy)">' + esc(sName) + ' ↔ ' + esc(tName) + '</b>'
+          + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Làng') + '</span>'
           + '</div>'
-          + '<div style="font-size:12.5px;color:#334155;margin-top:4px">'
-          + '  <span><b>Có thể chia sẻ:</b> ' + esc(offer) + '</span>'
-          + '  <span style="margin:0 6px;color:#cbd5e1">·</span>'
-          + '  <span><b>Muốn học:</b> ' + esc(need) + '</span>'
-          + '</div>'
-          + '<small style="color:#94a3b8;margin-top:4px;display:block">Gửi ngày: ' + esc(createdDate) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
-          + '</div>'
-          + '</div>'
-          + '<div class="conn-item-right">'
-          + '<button class="btn btn-primary small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Accepted" style="background:#166534;border-color:#166534">' + icon('check', 13) + ' Đồng ý</button>'
-          + '<button class="btn small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Rejected" style="color:#b91c1c;border-color:#fca5a5">' + icon('close', 13) + ' Từ chối</button>'
-          + '</div>'
-          + '</div>';
-      }).join('');
-    }
-  } else if (connectionsActiveTab === 'sent') {
-    if (sent.length === 0) {
-      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Bạn chưa gửi lời mời kết nối nào.</p></div>';
-    } else {
-      listHtml = sent.map(c => {
-        const isPers = c.connectionType === 'personal';
-        const targetName = c.targetBooth?.authorName || c.targetBooth?.villageName || c.targetMemberId || 'Đối tác';
-        const targetVil = c.targetBooth?.authorVillageName || c.targetBooth?.villageName || c.targetVillageId || '—';
-        const targetAv = c.targetBooth?.authorAvatarUrl || null;
-        const avHtml = memberAvatarHtml(targetAv, targetName, 44);
-        const createdDate = c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : '';
-
-        let statusPill = '';
-        if (c.status === 'Accepted') {
-          statusPill = '<span class="status-badge" style="background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">✓ Đã chấp nhận</span>';
-        } else if (c.status === 'Pending') {
-          statusPill = '<span class="status-badge" style="background:#fef3c7;color:#b45309;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">⏳ Chờ xác nhận</span>';
-        } else if (c.status === 'Rejected') {
-          statusPill = '<span class="status-badge" style="background:#fee2e2;color:#b91c1c;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">✕ Đã từ chối</span>';
-        } else {
-          statusPill = '<span class="status-badge" style="background:#f1f5f9;color:#64748b;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">Đã hủy</span>';
-        }
-
-        const canCancel = c.status === 'Pending';
-        return '<div class="conn-item-card">'
-          + '<div class="conn-item-left">'
-          + avHtml
-          + '<div style="min-width:0">'
-          + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-          + '  <b style="font-size:14px;color:var(--navy)">' + esc(targetName) + '</b>'
-          + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Gian hàng Làng') + '</span>'
-          + '  <small style="color:#64748b">' + esc(targetVil) + '</small>'
-          + '</div>'
-          + '<small style="color:#94a3b8;margin-top:4px;display:block">Gửi ngày: ' + esc(createdDate) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
+          + '<small style="color:#64748b;margin-top:4px;display:block">Cập nhật: ' + esc(dateStr) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
           + '</div>'
           + '</div>'
           + '<div class="conn-item-right">'
           + statusPill
-          + (canCancel ? '<button class="btn small" data-action="cancel-connection" data-id="' + esc(c.id) + '" style="color:#64748b;margin-left:6px">' + icon('close', 12) + ' Hủy</button>' : '')
           + '</div>'
           + '</div>';
       }).join('');
     }
   } else {
     if (accepted.length === 0) {
-      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Chưa có kết nối nào được xác nhận thành công.</p></div>';
+      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Chưa có kết nối nào đang hoạt động. Bấm <b>Kết nối</b> ở các gợi ý phía trên để kết nối ngay.</p></div>';
     } else {
       listHtml = accepted.map(c => {
         const isPers = c.connectionType === 'personal';
-        const sName = c.sourceBooth?.authorName || c.sourceBooth?.villageName || c.requestedBy;
-        const tName = c.targetBooth?.authorName || c.targetBooth?.villageName || c.targetMemberId;
-        const sVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '—';
-        const tVil = c.targetBooth?.authorVillageName || c.targetBooth?.villageName || '—';
-        const dateStr = c.respondedAt ? new Date(c.respondedAt).toLocaleDateString('vi-VN') : '';
+        const sName = isPers
+          ? (c.seekerName || c.sourceBooth?.authorName || c.requestedBy)
+          : (c.seekerVillageName || c.sourceBooth?.villageName || c.sourceVillageId || 'Làng');
+        const tName = isPers
+          ? (c.targetName || c.targetBooth?.authorName || c.targetMemberId)
+          : (c.targetVillageName || c.targetBooth?.villageName || c.targetVillageId || 'Làng');
+        const sVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '';
+        const tVil = c.targetBooth?.authorVillageName || c.targetBooth?.villageName || '';
+        const dateStr = (c.respondedAt || c.createdAt) ? new Date(c.respondedAt || c.createdAt).toLocaleDateString('vi-VN') : '';
+        const peerLabel = getConnectionPeerLabel(c);
+        const canSch = isConnectionParticipant(c);
+        const canCancel = canCancelConnection(c);
 
         return '<div class="conn-item-card">'
           + '<div class="conn-item-left">'
-          + '<div style="width:38px;height:38px;border-radius:50%;background:#dcfce7;color:#15803d;display:flex;align-items:center;justify-content:center;font-weight:700">' + icon('check', 18) + '</div>'
+          + '<div style="width:38px;height:38px;border-radius:50%;background:#dcfce7;color:#15803d;display:flex;align-items:center;justify-content:center;font-weight:700">' + icon('checkCircle', 18) + '</div>'
           + '<div style="min-width:0">'
           + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-          + '  <b style="font-size:14px;color:var(--navy)">' + esc(sName) + ' (' + esc(sVil) + ') ↔ ' + esc(tName) + ' (' + esc(tVil) + ')</b>'
+          + '  <b style="font-size:14px;color:var(--navy)">' + esc(sName) + (isPers && sVil ? ' (' + esc(sVil) + ')' : '') + ' ↔ ' + esc(tName) + (isPers && tVil ? ' (' + esc(tVil) + ')' : '') + '</b>'
           + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Làng') + '</span>'
           + '</div>'
-          + '<small style="color:#64748b;margin-top:4px;display:block">Xác nhận ngày: ' + esc(dateStr) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
+          + '<small style="color:#64748b;margin-top:4px;display:block">Kết nối ngày: ' + esc(dateStr) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
           + '</div>'
           + '</div>'
-          + '<div class="conn-item-right">'
-          + '<span class="status-badge" style="background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">✓ Đã kết nối</span>'
+          + '<div class="conn-item-right" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          + renderAcceptedBadgeOrCancelBtn({ connId: c.id, label: peerLabel, type: isPers ? 'personal' : 'village', canCancel, small: true, iconSize: 13 })
+          + (canSch ? '<button type="button" class="btn small" data-action="schedule-connection" data-id="' + esc(c.id) + '">' + icon('calendar', 13) + ' Đặt lịch cùng học</button>' : '')
           + '</div>'
           + '</div>';
       }).join('');
@@ -1098,22 +1286,23 @@ function renderConnectionsManager() {
   return '<div class="connections-manager-wrap" style="margin-top:36px;border-top:1px solid #e2e8f0;padding-top:24px">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">'
     + '  <div>'
-    + '    <h2 style="font-size:18px;margin:0 0 4px;color:var(--navy)">Lời mời & Kết nối chính thức (Lark Base)</h2>'
-    + '    <p style="margin:0;font-size:12.5px;color:#64748b">Dữ liệu được lưu trữ và đồng bộ bảo mật trực tiếp trên bảng T14_Connections</p>'
+    + '    <h2 style="font-size:18px;margin:0 0 4px;color:var(--navy)">Kết nối của tôi</h2>'
     + '  </div>'
-    + '  <button class="btn small" data-action="refresh-connections" style="display:inline-flex;align-items:center;gap:5px">'
+    + '  <button type="button" class="btn small" data-action="refresh-connections" style="display:inline-flex;align-items:center;gap:5px">'
     +      icon('refresh', 13) + ' Làm mới'
     + '  </button>'
     + '</div>'
     + '<div class="conn-tabs">'
-    + '  <button class="conn-tab-btn ' + (connectionsActiveTab === 'inbox' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="inbox">'
-    + '    Cần xác nhận (' + inbox.length + ')'
-    + '  </button>'
-    + '  <button class="conn-tab-btn ' + (connectionsActiveTab === 'sent' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="sent">'
-    + '    Đã gửi (' + sent.length + ')'
-    + '  </button>'
-    + '  <button class="conn-tab-btn ' + (connectionsActiveTab === 'accepted' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="accepted">'
+    + '  <button type="button" class="conn-tab-btn ' + (activeTab === 'accepted' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="accepted">'
     + '    Đã kết nối (' + accepted.length + ')'
+    + '  </button>'
+    + (inbox.length > 0
+        ? ('  <button type="button" class="conn-tab-btn ' + (activeTab === 'inbox' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="inbox">'
+           + '    Chờ duyệt cũ (' + inbox.length + ')'
+           + '  </button>')
+        : '')
+    + '  <button type="button" class="conn-tab-btn ' + (activeTab === 'history' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="history">'
+    + '    Đã hủy / lịch sử (' + historyConns.length + ')'
     + '  </button>'
     + '</div>'
     + '<div style="margin-top:14px">'
@@ -1126,7 +1315,7 @@ function showNotificationsModal() {
   const inbox = Array.isArray(LIVE.inboxConnections) ? LIVE.inboxConnections : [];
   let bodyHtml = '';
   if (inbox.length === 0) {
-    bodyHtml = '<div class="empty" style="padding:28px 12px"><p style="margin:0;color:#64748b">Không có lời mời kết nối nào đang chờ xử lý.</p></div>';
+    bodyHtml = '<div class="empty" style="padding:28px 12px"><p style="margin:0;color:#64748b">Không có thông báo hoặc yêu cầu nào đang chờ xử lý.</p></div>';
   } else {
     bodyHtml = '<div style="max-height:420px;overflow-y:auto">'
       + inbox.map(c => {
@@ -1154,7 +1343,7 @@ function showNotificationsModal() {
       }).join('')
       + '</div>';
   }
-  openModal('Lời mời kết nối đang chờ (' + inbox.length + ')', bodyHtml, '<button class="btn" data-action="close-modal">Đóng</button>');
+  openModal('Thông báo kết nối' + (inbox.length > 0 ? ' (' + inbox.length + ' chờ duyệt cũ)' : ''), bodyHtml, '<button class="btn" data-action="close-modal">Đóng</button>');
 }
 function getVillageNodeCoords(key, villageName, villageId, coords, nodeMap) {
   if (key && coords[key]) return coords[key];
@@ -1190,17 +1379,22 @@ function networkPersonal() {
 
   // ---- Thu thập kết nối của user hiện tại ----
   const allConns = Array.isArray(LIVE.connections) ? LIVE.connections : [];
-  const myMemberId = me?.memberId || '';
+  const myMemberId = me?.memberId || me?.id || '';
 
   // Build danh sách các peer (người kết nối)
   const peers = [];
   allConns.forEach(c => {
     if (c.connectionType !== 'personal') return;
-    const status = c.status; // 'Accepted' | 'Pending' | 'Rejected'
-    if (status === 'Rejected') return;
+    const status = c.status; // 'Accepted' | 'Pending' | 'Rejected' | 'Cancelled'
+    if (status !== 'Accepted' && status !== 'Pending') return;
+    // Chỉ hiển thị các kết nối mà chính user hiện tại là một bên tham gia (tránh admin thấy kết nối của người khác trên bản đồ cá nhân)
+    const isSeekerSide = Boolean(myMemberId) && (c.requestedBy === myMemberId || c.sourceBooth?.authorMemberId === myMemberId);
+    const isTargetSide = Boolean(myMemberId) && (c.targetMemberId === myMemberId || c.targetBooth?.authorMemberId === myMemberId || c.approverMemberId === myMemberId);
+    if (!isSeekerSide && !isTargetSide) return;
+
     // Xác định phía bên kia
     let peerId, peerName, peerVillage, peerAvatar;
-    if (c.requestedBy === myMemberId) {
+    if (isSeekerSide) {
       peerId      = c.targetMemberId || c.targetBooth?.authorMemberId || '';
       peerName    = c.targetName || c.targetBooth?.authorName || '';
       peerVillage = c.targetVillageName || c.targetBooth?.authorVillageName || c.targetVillageId || '';
@@ -1226,15 +1420,31 @@ function networkPersonal() {
       }
     }
 
+    // Fallback: tìm qua LIVE.booths nếu vẫn còn ID thô (trường hợp memberId không khớp)
+    if (!peerName || /^MEM-\d+$/i.test(peerName)) {
+      const peerBoothRecId = isSeekerSide
+        ? (c.targetBoothRecordId || c.targetBooth?.recordId)
+        : (c.sourceBoothRecordId || c.sourceBooth?.recordId);
+      const lb = peerBoothRecId
+        ? (LIVE.booths || []).find(b => b.recordId === peerBoothRecId)
+        : (peerId ? (LIVE.booths || []).find(b => b.authorMemberId === peerId) : null);
+      if (lb) {
+        if (!peerName || /^MEM-\d+$/i.test(peerName)) peerName = lb.authorName || peerName;
+        if (!peerVillage || /^VIL-\d+$/i.test(peerVillage)) peerVillage = lb.authorVillageName || lb.villageName || peerVillage;
+        if (!peerAvatar) peerAvatar = lb.authorAvatarUrl || '';
+        if (!peerId && lb.authorMemberId) peerId = lb.authorMemberId;
+      }
+    }
+
     // Nếu village vẫn là mã VIL-xxx thì tìm trong LIVE.villages
     if (peerVillage && /^VIL-\d+$/i.test(peerVillage)) {
       const lv = (LIVE.villages || []).find(v => v.id === peerVillage);
       if (lv) peerVillage = lv.name;
     }
 
-    if (!peerName) peerName = peerId || 'Thành viên';
+    if (!peerName || /^MEM-\d+$/i.test(peerName)) peerName = peerId || 'Thành viên';
 
-    peers.push({ peerId, peerName, peerVillage, peerAvatar, status, connId: c.id || c.connectionId });
+    peers.push({ peerId, peerName, peerVillage, peerAvatar, status, connId: c.id || c.connectionId, connObj: c });
   });
 
   // Nếu chưa đăng nhập hoặc chưa có kết nối
@@ -1363,9 +1573,9 @@ function networkPersonal() {
     + defs + orbits + lines + centerNode + peerNodes + emptyOverlay + '</svg>';
 
   const caption = '<div class="network-bottom-caption">'
-    + (accepted.length > 0 ? accepted.length + ' kết nối đã được chấp nhận' : 'Chưa có kết nối nào được chấp nhận')
-    + (pending.length > 0 ? ' · ' + pending.length + ' đang chờ duyệt' : '')
-    + ' · Nhấn vào avatar để xem chi tiết'
+    + (accepted.length > 0 ? accepted.length + ' kết nối đang hoạt động' : 'Chưa có kết nối nào')
+    + (pending.length > 0 ? ' · ' + pending.length + ' chờ duyệt (cũ)' : '')
+    + ' · Nhấn vào avatar để xem gian hàng tri thức'
     + '</div>';
 
   const legend = buildNetworkLegendPersonal(accepted.length, pending.length);
@@ -1374,24 +1584,27 @@ function networkPersonal() {
   if (total === 0) {
     connectedListHtml = '<div class="empty">' + icon('link', 32)
       + '<b>Chưa có kết nối nào</b>'
-      + '<p>Vào Smart Matching để gửi lời mời kết nối tới các thành viên phù hợp.</p>'
+      + '<p>Vào Smart Matching để kết nối ngay với các thành viên phù hợp.</p>'
       + '<button class="btn btn-primary" data-action="nav" data-page="matches">' + icon('spark', 14) + ' Tìm người phù hợp</button>'
       + '</div>';
   } else {
-    connectedListHtml = '<div class="section-title" style="margin-top:20px"><h2>Danh sách kết nối của tôi (' + total + ')</h2><span>Chỉ hiển thị kết nối Accepted và Pending từ Lark Base</span></div>'
+    connectedListHtml = '<div class="section-title" style="margin-top:20px"><h2>Danh sách kết nối của tôi (' + total + ')</h2><span>Chỉ hiển thị kết nối đang hoạt động từ Lark Base</span></div>'
       + '<div class="member-roster-grid">'
       + peers.map(p => {
           const avHtml = memberAvatarHtml(p.peerAvatar, p.peerName, 44);
           const isAcc = p.status === 'Accepted';
-          return '<div class="member-roster-card" style="' + (isAcc ? '' : 'opacity:0.75') + '">'
+          const canCancel = p.connObj && canCancelConnection(p.connObj);
+          return '<div class="member-roster-card" data-action="open-peer-node" data-id="' + esc(p.peerId) + '" data-conn-id="' + esc(p.connId) + '" style="cursor:pointer;' + (isAcc ? '' : 'opacity:0.75') + '">'
             + avHtml
             + '<div style="flex:1;min-width:0">'
             + '<b style="display:block;font-size:13.5px">' + esc(p.peerName) + '</b>'
             + '<small style="color:#64748b">' + esc(p.peerVillage || '—') + '</small>'
             + '</div>'
-            + '<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:' + (isAcc ? '#dcfce7' : '#fef3c7') + ';color:' + (isAcc ? '#15803d' : '#b45309') + '">'
-            + (isAcc ? '✓ Đã kết nối' : '⏳ Chờ duyệt')
-            + '</span>'
+            + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'
+            + (isAcc
+                ? renderAcceptedBadgeOrCancelBtn({ connId: p.connId, label: p.peerName, type: 'personal', canCancel, small: true, iconSize: 12 })
+                : '<span class="conn-status-legacy">⏳ Chờ duyệt (cũ)</span>')
+            + '</div>'
             + '</div>';
         }).join('')
       + '</div>';
@@ -1489,17 +1702,28 @@ function networkVillage() {
   const svgEl = '<svg class="network-map-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Bản đồ kết nối Làng–Làng AXANH" style="width:100%;height:auto;display:block">'
     + defs + orbits + lines + badge + nodes + emptyOverlay + '</svg>';
 
+  const hasLegacyPending = activeLines.some(({ c }) => c.status === 'Pending');
   const caption = '<div class="network-bottom-caption">Đường nối lấy từ kết nối Làng–Làng trên Lark Base</div>';
   const legend = '<div class="network-legend">'
     + '<span><i class="dot" style="background:#d4aa50"></i>' + villageNodes.length + ' Làng có gian hàng</span>'
     + '<span><i class="dot" style="background:#59dccd"></i>Đã kết nối</span>'
-    + '<span><i class="dot" style="background:#f2c657"></i>Chờ duyệt</span>'
+    + (hasLegacyPending ? '<span><i class="dot" style="background:#f2c657"></i>Chờ duyệt (cũ)</span>' : '')
     + '</div>';
 
   const connectionSummary = '<div class="section-title" style="margin-top:24px"><h2>' + activeLines.length + ' kết nối Làng–Làng</h2><span>Dữ liệu kết nối từ Lark Base</span></div>'
     + (activeLines.length
-      ? '<div class="grid2">' + activeLines.map(({ c }) => '<div class="panel"><div class="row-flex"><b>' + esc(c.sourceVillageName || c.sourceBooth?.villageName || 'Làng') + ' ↔ ' + esc(c.targetVillageName || c.targetBooth?.villageName || 'Làng') + '</b><span class="status">' + (c.status === 'Accepted' ? 'Đã kết nối' : 'Chờ duyệt') + '</span></div><p>' + esc(c.topic || c.sourceBooth?.offer || c.sourceBooth?.need || 'Trao đổi tri thức') + '</p></div>').join('') + '</div>'
-      : '<div class="empty">' + icon('network', 34) + '<b>Chưa có kết nối Làng–Làng</b><p>Khi có lời mời Làng–Làng từ gian hàng trên Phiên chợ tri thức, kết nối sẽ hiển thị tại đây.</p></div>');
+      ? '<div class="grid2">' + activeLines.map(({ c }) => {
+          const isAcc = c.status === 'Accepted';
+          const peerLabel = getConnectionPeerLabel(c);
+          const canCancel = isAcc && canCancelConnection(c);
+          return '<div class="panel"><div class="row-flex" style="gap:8px;flex-wrap:wrap"><b>' + esc(c.sourceVillageName || c.sourceBooth?.villageName || 'Làng') + ' ↔ ' + esc(c.targetVillageName || c.targetBooth?.villageName || 'Làng') + '</b>'
+            + '<div style="display:flex;align-items:center;gap:6px;margin-left:auto">'
+            + (isAcc
+                ? renderAcceptedBadgeOrCancelBtn({ connId: c.id, label: peerLabel, type: 'village', canCancel, small: true, iconSize: 12 })
+                : '<span class="conn-status-legacy">⏳ Chờ duyệt (cũ)</span>')
+            + '</div></div><p>' + esc(c.topic || c.sourceBooth?.offer || c.sourceBooth?.need || 'Trao đổi tri thức') + '</p></div>';
+        }).join('') + '</div>'
+      : '<div class="empty">' + icon('network', 34) + '<b>Chưa có kết nối Làng–Làng</b><p>Khi hai Làng kết nối trên Phiên chợ tri thức, đường nối sẽ hiển thị tại đây.</p></div>');
   return buildNetworkPage(buildNetworkTogglePill(false), svgEl, caption, legend, connectionSummary);
 }
 
@@ -1515,12 +1739,15 @@ function openVillageConnectionsModal(boothId) {
       + connections.map(c => {
           const connected = c.status === 'Accepted';
           const date = c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : '—';
+          const canCancel = connected && c.connObj && canCancelConnection(c.connObj);
           return '<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #eef2f7">'
             + villageLogoHtml(c.iconUrl, c.name, 40)
-            + '<div style="flex:1;min-width:0"><b style="display:block;font-size:13px">' + esc(c.name) + '</b><small style="color:#64748b">Đề xuất: ' + esc(date) + '</small></div>'
-            + '<span style="font-size:10px;font-weight:700;padding:5px 8px;border-radius:20px;white-space:nowrap;background:' + (connected ? '#dcfce7;color:#15803d' : '#fef3c7;color:#b45309') + '">'
-            + (connected ? '● Đã kết nối' : '◷ Chờ xác nhận')
-            + '</span></div>';
+            + '<div style="flex:1;min-width:0"><b style="display:block;font-size:13px">' + esc(c.name) + '</b><small style="color:#64748b">Ngày kết nối: ' + esc(date) + '</small></div>'
+            + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'
+            + (connected
+                ? renderAcceptedBadgeOrCancelBtn({ connId: c.connObj.id, label: c.name, type: 'village', canCancel, small: true, iconSize: 12 })
+                : '<span class="conn-status-legacy">◷ Chờ duyệt (cũ)</span>')
+            + '</div></div>';
         }).join('')
       + '</div>'
     : '<div class="empty"><b>Chưa có Làng kết nối</b><p>Các kết nối Làng–Làng của gian hàng này sẽ hiển thị tại đây.</p></div>';
@@ -1586,7 +1813,7 @@ function buildCenterBadgeGuest(cx, cy, r) {
 function buildNetworkLegendPersonal(acceptedCount, pendingCount) {
   return '<div class="network-legend">'
     + '<span><i class="dot" style="background:#1a7de8"></i>' + acceptedCount + ' Đã kết nối</span>'
-    + '<span><i class="dot" style="background:#f2c657"></i>' + pendingCount + ' Chờ duyệt</span>'
+    + (pendingCount > 0 ? '<span><i class="dot" style="background:#f2c657"></i>' + pendingCount + ' Chờ duyệt (cũ)</span>' : '')
     + '</div>';
 }
 
@@ -1716,9 +1943,9 @@ function schedule() {
     + '<p class="muted" style="margin-top:16px">Lịch đã qua giờ kết thúc không tự chuyển sang hoàn thành. Một người tham gia cần xác nhận buổi học đã diễn ra.</p>';
 }
 
-function openLearningScheduleModal() {
+function openLearningScheduleModal(preselectConnId = '') {
   const connections = LIVE.learning.availableConnections || [];
-  const connectionOptions = connections.map(connection => '<option value="' + esc(connection.id) + '">' + esc(connection.label) + '</option>').join('');
+  const connectionOptions = connections.map(connection => '<option value="' + esc(connection.id) + '"' + (preselectConnId && (connection.id === preselectConnId || connection.connectionId === preselectConnId) ? ' selected' : '') + '>' + esc(connection.label) + '</option>').join('');
   const formats = (LIVE.learning.reportOptions?.formats || ['Online', 'Trực tiếp'])
     .map(format => '<option value="' + esc(format) + '">' + esc(format) + '</option>').join('');
   const today = vietnamDateParts();
@@ -2704,23 +2931,55 @@ async function loadLiveData() {
 }
 
 async function loadLiveConnections() {
-  if (!window.AXANH_LIVE_API || !window.AXANH_LIVE_API.getConnectionsMine) return;
+  const api = window.AXANH_LIVE_API;
+
+  if (!api ||
+      typeof api.getConnectionsMine !== 'function' ||
+      typeof api.getConnectionsInbox !== 'function' ||
+      typeof api.getNotificationsCount !== 'function') {
+    const message = 'Dịch vụ kết nối chưa sẵn sàng.';
+    if (LIVE.connectionsError !== message) toast(message, 'warn');
+    LIVE.connectionsError = message;
+    return;
+  }
+
   LIVE.connectionsLoading = true;
+
   try {
     const [mine, inbox, notif] = await Promise.all([
-      window.AXANH_LIVE_API.getConnectionsMine().catch(() => []),
-      window.AXANH_LIVE_API.getConnectionsInbox().catch(() => []),
-      window.AXANH_LIVE_API.getNotificationsCount().catch(() => ({ pendingCount: 0 })),
+      api.getConnectionsMine(),
+      api.getConnectionsInbox(),
+      api.getNotificationsCount(),
     ]);
-    LIVE.connections = Array.isArray(mine) ? mine : [];
-    LIVE.inboxConnections = Array.isArray(inbox) ? inbox : [];
-    LIVE.notificationCount = notif?.pendingCount || 0;
+
+    if (!Array.isArray(mine) ||
+        !Array.isArray(inbox) ||
+        !notif ||
+        !Number.isSafeInteger(notif.pendingCount) ||
+        notif.pendingCount < 0) {
+      throw new Error('Dữ liệu kết nối từ Backend không hợp lệ.');
+    }
+
+    LIVE.connections = mine;
+    LIVE.inboxConnections = inbox;
+    LIVE.notificationCount = notif.pendingCount;
+    LIVE.connectionsError = '';
   } catch (err) {
+    if (err?.status === 401) {
+      LIVE.connectionsError = 'Phiên đăng nhập hết hạn.';
+      console.warn('[Connections] Session expired while loading connections');
+      return;
+    }
+    const message = 'Không thể đồng bộ kết nối. Dữ liệu có thể đã cũ.';
     console.warn('[Connections] Failed to load live connections:', err);
+    if (LIVE.connectionsError !== message) {
+      toast(message, 'warn');
+    }
+    LIVE.connectionsError = message;
   } finally {
     LIVE.connectionsLoading = false;
     renderUserHeader();
-    if (currentPage === 'matches' || currentPage === 'network' || currentPage === 'market') render();
+    if (currentPage === 'matches' || currentPage === 'network' || currentPage === 'market' || currentPage === 'home') render();
   }
 }
 
@@ -2822,7 +3081,7 @@ function render() {
   renderUserHeader();
 }
 function openModal(title, body, footer = '') { const root = document.querySelector('#modal'); root.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-head"><div><div class="eyebrow">ATED PRO · PHIÊN CHỢ TRI THỨC</div><h2 id="modalTitle">' + title + '</h2></div><button class="modal-close" data-action="close-modal" aria-label="Đóng">' + icon('close', 18) + '</button></div><div class="modal-body">' + body + '</div>' + (footer ? '<div class="modal-foot">' + footer + '</div>' : '') + '</div>'; root.classList.add('open'); document.body.style.overflow = 'hidden' }
-function closeModal() { document.querySelector('#modal').classList.remove('open'); document.querySelector('#modal').innerHTML = ''; document.body.style.overflow = '' }
+function closeModal() { if (inFlightCancelId) return; document.querySelector('#modal').classList.remove('open'); document.querySelector('#modal').innerHTML = ''; document.body.style.overflow = '' }
 function openPeerBoothModal(peerId, connId) {
   const member = (LIVE.members || []).find(m => m.id === peerId || m.memberId === peerId);
   const connection = (LIVE.connections || []).find(c =>
@@ -2871,19 +3130,30 @@ function openPeerBoothModal(peerId, connId) {
     (booth.villageId && v.id === booth.villageId) || v.name === villageName
   );
   const offerTopics = Array.isArray(booth.offerTags) ? booth.offerTags : [booth.offerTopic || booth.offerTag];
-  const body = '<div class="person-head" style="margin-bottom:20px">'
+  const statusBadge = connection.status === 'Accepted'
+    ? '<span class="conn-status-accepted">' + icon('checkCircle', 13) + ' Đã kết nối</span>'
+    : '<span class="conn-status-legacy">⏳ Chờ duyệt (cũ)</span>';
+  const canSch = connection.status === 'Accepted' && isConnectionParticipant(connection);
+  const canCancel = canCancelConnection(connection);
+  const footer = '<button type="button" class="btn" data-action="close-modal">Đóng</button>'
+    + (canSch ? '<button type="button" class="btn btn-primary" data-action="schedule-connection" data-id="' + esc(connection.id) + '">' + icon('calendar', 14) + ' Đặt lịch cùng học</button>' : '')
+    + (canCancel ? '<button type="button" class="btn btn-cancel-outline" data-action="prompt-cancel-connection" data-id="' + esc(connection.id) + '" data-label="' + esc(peerName) + '" data-type="personal">Hủy kết nối</button>' : '');
+  const body = '<div class="person-head" style="margin-bottom:20px;display:flex;align-items:center;gap:12px">'
     + villageLogoHtml(booth.villageIconUrl || village?.iconUrl, villageName, 72)
-    + '<div><b style="font-size:16px">' + esc(villageName) + '</b><small>'
-    + esc(booth.authorOffice || member?.office || '—') + ' · Hồ sơ minh họa'
-    + '</small></div></div>'
-    + '<div class="note">Thông tin bên dưới lấy từ gian hàng tri thức được dùng để tạo kết nối này.</div>'
+    + '<div style="flex:1;min-width:0"><b style="font-size:16px">' + esc(villageName) + '</b><small>'
+    + esc(booth.authorOffice || member?.office || '—')
+    + '</small></div>'
+    + statusBadge
+    + '</div>'
+    + '<div class="note">Thông tin bên dưới lấy từ gian hàng tri thức của ' + esc(peerName) + '.</div>'
     + '<div class="kv"><span>Có thể chia sẻ</span><b>' + esc(booth.offer || 'Chưa cập nhật') + '</b></div>'
     + '<div class="kv"><span>Chủ đề</span><b>' + esc(offerTopics.filter(Boolean).join(' · ') || 'Chưa cập nhật') + '</b></div>'
-    + '<div class="kv"><span>Muốn học</span><b>' + esc(booth.need || 'Chưa cập nhật') + '</b></div>';
+    + '<div class="kv"><span>Muốn học</span><b>' + esc(booth.need || 'Chưa cập nhật') + '</b></div>'
+    + (formatPreferredSlot(booth.availability) ? '<div class="kv"><span>Khung giờ ưu tiên</span><b>' + esc(formatPreferredSlot(booth.availability)) + '</b></div>' : '');
   openModal(
-    esc(peerName),
+    'Phiên chợ tri thức · ' + esc(peerName),
     body,
-    '<button class="btn" data-action="close-modal">Đóng</button>'
+    footer
   );
 }
 function profileModal(id) { const p = person(id); if (!p) return; openModal(esc(p.name), '<div class="person-head" style="margin-bottom:22px">' + pic(p, 72) + '<div><b style="font-size:16px">' + esc(p.village) + '</b><small>' + esc(p.office) + ' · ' + (p.confirmed ? 'Tự khai' : 'Hồ sơ minh họa') + '</small></div></div><div class="note">Kỹ năng và nhu cầu hiển thị là ví dụ thiết kế; chưa được người tham gia xác nhận. Không dùng làm cơ sở đánh giá cá nhân.</div><div class="kv"><span>Có thể chia sẻ</span><b>' + esc(p.offer) + '</b></div><div class="kv"><span>Chủ đề</span><b>' + esc((p.offerTags || []).join(' · ')) + '</b></div><div class="kv"><span>Muốn học</span><b>' + esc(p.need) + '</b></div><div class="kv"><span>Thời gian gợi ý</span><b>' + esc(p.availability.join(' · ')) + '</b></div>', '<button class="btn" data-action="close-modal">Đóng</button><button class="btn btn-primary" data-action="choose-seeker" data-id="' + p.id + '">Tìm người phù hợp</button>') }
@@ -3067,7 +3337,10 @@ function openRegistrationForm(defaultType = 'personal') {
     + '<div class="field"><label id="lblNeed">' + (isVillage ? 'Điều Làng muốn học' : 'Điều bạn muốn học') + ' <span style="color:#e11d48">*</span></label><input name="need" required maxlength="500" placeholder="' + (isVillage ? 'Ví dụ: Làng Lửa mong muốn học hỏi về AI & Automation...' : 'Ví dụ: Làm việc với AI, kỹ năng thuyết trình...') + '"/></div>'
     + '<div class="field"><label id="lblNeedTag">' + (isVillage ? 'Chủ đề Làng muốn học' : 'Chủ đề muốn học') + ' <span style="color:#e11d48">*</span></label><select name="needTag" required><option value="">Chọn chủ đề</option>' + tags.map(t => '<option>' + esc(t) + '</option>').join('') + '</select></div>'
     + '</div>'
+    + '<div class="field-grid">'
     + '<div class="field"><label>Hình thức mong muốn</label><select name="preferredFormat"><option value="">Không xác định</option>' + formats.map(f => '<option value="' + esc(f.v) + '">' + esc(f.l) + '</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Khung giờ ưu tiên</label><input type="datetime-local" name="availability" /></div>'
+    + '</div>'
     + '<div class="field"><label>Kết quả mong muốn sau buổi hỗ trợ</label><textarea name="outcome" placeholder="Sau buổi này, tôi muốn có thể..."></textarea></div>'
     + '<label class="checkline"><input type="checkbox" name="consent" checked><span id="lblConsent">' + (isVillage ? 'Tôi xác nhận đại diện Làng đăng ký thông tin kỹ năng và nhu cầu này để kết nối trong nội bộ AXANH.' : 'Tôi đồng ý cho hiển thị thông tin kỹ năng và nhu cầu trong phạm vi nội bộ AXANH.') + '</span></label>'
     + '<div id="registrationFormStatus" style="margin-bottom:8px;min-height:20px"></div>'
@@ -3085,7 +3358,7 @@ function addToastSettings() { toast('Đã lưu đường dẫn trên trình duy�
 function launchFireworks({ bursts = 7 } = {}) { const canvas = document.getElementById('fxCanvas'); if (!canvas) return; const ctx = canvas.getContext('2d'); canvas.width = window.innerWidth * devicePixelRatio; canvas.height = window.innerHeight * devicePixelRatio; canvas.style.width = window.innerWidth + 'px'; canvas.style.height = window.innerHeight + 'px'; canvas.style.background = 'rgba(3,10,30,.72)'; canvas.style.backdropFilter = 'blur(1px)'; ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); const w = window.innerWidth, h = window.innerHeight; const palette = ['#ffd34f', '#ff6b7a', '#5ee7df', '#8ac6ff', '#ffffff', '#f59e0b']; const particles = []; const burstsArr = []; for (let i = 0; i < bursts; i++) { burstsArr.push({ x: Math.random() * w * 0.82 + w * 0.09, y: Math.random() * h * 0.42 + h * 0.08, delay: i * 130 }) } const start = performance.now(); function spawn(b) { for (let i = 0; i < 42; i++) { const ang = Math.random() * Math.PI * 2, speed = 1.5 + Math.random() * 5.5; particles.push({ x: b.x, y: b.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, g: .055 + Math.random() * .03, life: 48 + Math.random() * 28, size: 2 + Math.random() * 2.8, color: palette[(Math.random() * palette.length) | 0] }) } } function frame(t) { ctx.clearRect(0, 0, w, h); burstsArr.forEach(b => { if (!b.done && t - start > b.delay) { spawn(b); b.done = true } }); for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.x += p.vx; p.y += p.vy; p.vy += p.g; p.life -= 1; if (p.life <= 0) { particles.splice(i, 1); continue } ctx.globalAlpha = Math.max(.08, p.life / 80); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); if (p.life > 18) { ctx.strokeStyle = p.color; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.2, p.y - p.vy * 2.2); ctx.stroke(); } } ctx.globalAlpha = 1; if (particles.length || burstsArr.some(b => !b.done)) { requestAnimationFrame(frame) } else { ctx.clearRect(0, 0, w, h); canvas.style.background = 'transparent'; canvas.style.backdropFilter = 'none'; } } requestAnimationFrame(frame) }
 window.addEventListener('resize', () => { const canvas = document.getElementById('fxCanvas'); if (canvas) { canvas.width = window.innerWidth * devicePixelRatio; canvas.height = window.innerHeight * devicePixelRatio; canvas.style.width = window.innerWidth + 'px'; canvas.style.height = window.innerHeight + 'px'; } });
 
-const ApiAdapter = { mode: 'hybrid-readonly', async listPeople() { return getPeople() }, async listVillages() { return LIVE.villages }, async listMembers() { return LIVE.members }, async listConnections() { return STATE.connections }, async readFromLarkBackend() { return window.AXANH_LIVE_API.load() } };
+const ApiAdapter = { mode: 'live-readonly', async listPeople() { return getPeople() }, async listVillages() { return LIVE.villages }, async listMembers() { return LIVE.members }, async listConnections() { return LIVE.connections }, async readFromLarkBackend() { return window.AXANH_LIVE_API.load() } };
 window.AXANH_KEX_ADAPTER = ApiAdapter;
 
 // ===== CLICK HANDLER (thêm toggle-user-menu + my-profile) =====
@@ -3218,7 +3491,7 @@ window.addEventListener('click', e => {
       showNotificationsModal();
       break;
     case 'set-conn-tab':
-      connectionsActiveTab = b.dataset.tab || 'inbox';
+      connectionsActiveTab = b.dataset.tab || 'accepted';
       if (currentPage === 'matches') render();
       break;
     case 'refresh-connections': {
@@ -3236,7 +3509,7 @@ window.addEventListener('click', e => {
       b.disabled = true;
       window.AXANH_LIVE_API.respondConnection(connId, { decision })
         .then(() => {
-          toast(decision === 'Accepted' ? 'Đã đồng ý kết nối thành công!' : 'Đã từ chối lời mời kết nối.', 'success');
+          toast(decision === 'Accepted' ? 'Đã đồng ý kết nối thành công!' : 'Đã từ chối lời mời kết nối.', 'good');
           return loadLiveConnections();
         })
         .then(() => {
@@ -3244,27 +3517,44 @@ window.addEventListener('click', e => {
           render();
         })
         .catch(err => {
-          toast(err.message || 'Lỗi xử lý xác nhận.', 'error');
+          if (err?.status === 401) { showSessionExpiredModal(); return; }
+          toast(err.message || 'Lỗi xử lý xác nhận.', 'warn');
           b.disabled = false;
         });
       break;
     }
+    case 'prompt-cancel-connection': {
+      openCancelConnectionModal({
+        connId: b.dataset.id,
+        targetLabel: b.dataset.label || '',
+        connectionType: b.dataset.type || 'personal',
+      });
+      break;
+    }
+    case 'confirm-cancel-connection': {
+      confirmCancelConnection(b.dataset.id);
+      break;
+    }
+    case 'schedule-connection': {
+      const connId = b.dataset.id || '';
+      closeModal();
+      currentPage = 'schedule';
+      render();
+      loadLearningData().then(() => {
+        if (currentPage === 'schedule') {
+          openLearningScheduleModal(connId);
+        }
+      });
+      break;
+    }
     case 'cancel-connection': {
       const connId = b.dataset.id;
-      b.disabled = true;
-      window.AXANH_LIVE_API.cancelConnection(connId)
-        .then(() => {
-          toast('Đã hủy lời mời kết nối thành công.');
-          return loadLiveConnections();
-        })
-        .then(() => {
-          closeModal();
-          render();
-        })
-        .catch(err => {
-          toast(err.message || 'Lỗi hủy lời mời.', 'error');
-          b.disabled = false;
-        });
+      const conn = (LIVE.connections || []).find(c => c.id === connId || c.connectionId === connId);
+      openCancelConnectionModal({
+        connId,
+        targetLabel: conn ? getConnectionPeerLabel(conn) : '',
+        connectionType: conn?.connectionType || 'personal',
+      });
       break;
     }
     case 'set-network-mode':
@@ -3455,6 +3745,12 @@ document.addEventListener('submit', e => { const formId = e.target.getAttribute(
     if (statusEl) statusEl.innerHTML = '<span style="color:#1a7f5a;font-size:12px">⏳ Đang gửi đến Lark Base...</span>';
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Đang gửi...'; }
 
+    let availability = null;
+    if (d.availability) {
+      const rawSlot = d.availability.length === 16 ? d.availability + ':00+07:00' : d.availability;
+      const parsedSlot = Date.parse(rawSlot);
+      if (Number.isFinite(parsedSlot)) availability = parsedSlot;
+    }
     const boothData = {
       boothType: selectedType,
       offer: d.offer || '',
@@ -3462,6 +3758,7 @@ document.addEventListener('submit', e => { const formId = e.target.getAttribute(
       need: d.need || '',
       needTag: d.needTag || '',
       preferredFormat: d.preferredFormat || '',
+      availability,
       outcome: d.outcome || '',
       consent: !!f.querySelector('input[name="consent"]')?.checked,
     };
@@ -3519,7 +3816,14 @@ async function init() {
     return;
   }
 
-  const me = await API.getMe();
+  let me;
+  try {
+    me = await API.getMe();
+  } catch (error) {
+    console.error('[Auth] Session verification failed:', error);
+    showAuthScreen('Không thể kết nối hoặc xác minh phiên đăng nhập. Vui lòng thử lại sau.');
+    return;
+  }
   if (!me) {
     // Chưa đăng nhập → hiện màn hình login AXANH, KHÔNG load dữ liệu nội bộ
     showAuthScreen();

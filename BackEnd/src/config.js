@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,14 +40,81 @@ export function loadConfig(env = process.env) {
   // Booth cache TTL riêng – mặc định 0 (không cache) để phản ánh ngay khi chỉnh sửa trong Lark Base
   const boothTtl = Number(env.BOOTH_CACHE_TTL_SECONDS ?? 0);
   if (!Number.isInteger(boothTtl) || boothTtl < 0 || boothTtl > 3600) throw new Error('Invalid BOOTH_CACHE_TTL_SECONDS');
-  // The starter intentionally refuses to bind to a public network interface.
+  const isProduction = env.NODE_ENV === 'production';
   const host = env.HOST ?? '127.0.0.1';
-  if (!['127.0.0.1', '::1', 'localhost'].includes(host)) {
-    throw new Error('For this starter, HOST must be 127.0.0.1, ::1, or localhost; configure Lark SSO before public deployment.');
+
+  const loopbackHosts = ['127.0.0.1', '::1', 'localhost'];
+  const privateDockerBind =
+    isProduction &&
+    env.AXANH_DOCKER_PRIVATE === 'true' &&
+    host === '0.0.0.0';
+
+  if (!loopbackHosts.includes(host) && !privateDockerBind) {
+    throw new Error('HOST is not permitted for this environment.');
   }
-  const cookieSecure = env.COOKIE_SECURE === 'true' || (env.NODE_ENV === 'production' && env.COOKIE_SECURE !== 'false');
-  const frontendUrl = env.FRONTEND_URL || 'http://192.168.1.60:5173';
-  const larkRedirectUri = env.LARK_SSO_REDIRECT_URI || `${frontendUrl.replace(/\/+$/, '')}/auth/lark/callback`;
+
+  const trustedProxyIp =
+    String(env.AXANH_TRUSTED_PROXY_IP || '').trim();
+
+  if (
+    isProduction &&
+    (isIP(trustedProxyIp) !== 4 ||
+      trustedProxyIp === '0.0.0.0')
+  ) {
+    throw new Error(
+      'Production requires a valid AXANH_TRUSTED_PROXY_IP.'
+    );
+  }
+
+  const cookieSecure =
+    isProduction || env.COOKIE_SECURE === 'true';
+
+  const frontendUrl = env.FRONTEND_URL ||
+    (isProduction ? '' : 'http://192.168.1.60:5173');
+
+  let frontend;
+  try {
+    frontend = new URL(frontendUrl);
+  } catch {
+    throw new Error('Invalid FRONTEND_URL.');
+  }
+
+  const larkRedirectUri = env.LARK_SSO_REDIRECT_URI ||
+    new URL('/auth/lark/callback', frontend).toString();
+
+  if (isProduction) {
+    let callback;
+    try {
+      callback = new URL(larkRedirectUri);
+    } catch {
+      throw new Error('Invalid LARK_SSO_REDIRECT_URI.');
+    }
+
+    if (
+      frontend.protocol !== 'https:' ||
+      frontend.username ||
+      frontend.password ||
+      frontend.port ||
+      frontend.pathname !== '/' ||
+      frontend.search ||
+      frontend.hash
+    ) {
+      throw new Error('Production FRONTEND_URL must be an HTTPS origin.');
+    }
+
+    if (
+      callback.protocol !== 'https:' ||
+      callback.origin !== frontend.origin ||
+      callback.pathname !== '/auth/lark/callback' ||
+      callback.username ||
+      callback.password ||
+      callback.search ||
+      callback.hash
+    ) {
+      throw new Error('Production Lark callback must match FRONTEND_URL.');
+    }
+  }
+
   const hasRealSmtpPassword = env.SMTP_PASSWORD && !/DIEN_MAT_KHAU|REPLACE_/.test(env.SMTP_PASSWORD);
   const emailProvider = (env.EMAIL_PROVIDER === 'smtp' && hasRealSmtpPassword)
     ? 'smtp'
@@ -85,6 +153,7 @@ export function loadConfig(env = process.env) {
     cacheTtlMs: ttl * 1000,
     boothCacheTtlMs: boothTtl * 1000,
     cookieSecure,
+    trustedProxyIp,
     frontendUrl,
     larkRedirectUri,
     adminMemberIds,

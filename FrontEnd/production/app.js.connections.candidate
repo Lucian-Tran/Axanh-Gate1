@@ -1,0 +1,3569 @@
+'use strict';
+const SEED = window.SEED || (document.querySelector('#seed-json') ? JSON.parse(document.querySelector('#seed-json').textContent) : {});
+const DEFAULT_BASE = 'https://axaengineers.sg.larksuite.com/base/JhlXbNcdGahzUjsk54XljxUjgtf?table=tblx35YzG7foMWAf&view=vewCwSoOiM';
+const STORE_KEY = 'axanh_kex_v3_market_gate1_2026';
+
+
+const PAGE_LABELS = { home: ['Tổng quan', 'Phiên chợ tri thức'], villages: ['Lark Base', '11 Làng AXANH'], members: ['Thành viên làng', 'Danh sách thành viên'], market: ['Gian hàng', 'Khám phá tri thức'], matches: ['Kết nối', 'Smart Matching'], network: ['Cộng đồng', 'Bản đồ tri thức'], schedule: ['Hoạt động', 'Lịch cùng học'], library: ['Tri thức', 'Thư viện chung'], awards: ['Ghi nhận', 'Vinh danh tri thức'], gate1: ['Gate 1', 'Điều kiện Quán quân'], forms: ['Biểu mẫu', 'Đăng ký & báo cáo'], settings: ['Hệ thống', 'Lark & API'] };
+const NAV = [['home', 'Tổng quan', 'home'], ['villages', 'Danh sách 11 Làng', 'grid'], ['members', 'Thành viên làng', 'users'], ['market', 'Phiên chợ tri thức', 'grid'], ['matches', 'Kết nối phù hợp', 'link'], ['network', 'Bản đồ kết nối', 'network'], ['schedule', 'Lịch cùng học', 'calendar'], ['library', 'Kho tri thức', 'book'], ['awards', 'Vinh danh', 'award'], ['gate1', 'Gate 1 Quán quân', 'shield'], ['forms', 'Hai biểu mẫu', 'form']];
+const EMPTY_STATE = { profiles: {}, connections: [], results: [], gate1: [], settings: { registrationUrl: '', resultUrl: '', gate1Url: '', larkBase: DEFAULT_BASE }, seeker: 'VIL-0005', matchMode: 'person', villageSeeker: '' };
+let STATE = loadState(); let currentPage = 'home'; let marketSearch = ''; let officeFilter = 'all'; let __modalAction = null;
+const LIVE = { loading: true, connected: false, error: '', villages: [], members: [], booths: [], boothsLoading: false, boothsError: '', currentUser: null, connections: [], inboxConnections: [], notificationCount: 0, connectionsLoading: false, learning: { loading: false, error: '', sessions: [], availableConnections: [], reportOptions: { applied: [], formats: [] } }, knowledge: { loading: false, error: '', items: [], diagnostics: {} }, honors: { loading: false, error: '', data: null } };
+let connectionsActiveTab = 'inbox'; // 'inbox' | 'sent' | 'accepted'
+const MATCHING = {
+  loading: false,
+  error: '',
+  context: null,
+  suggestionsData: null,
+  selectedMemberId: null,
+  selectedVillageId: null,
+  selectedBoothId: null,
+  mode: 'personal',
+};
+let liveMemberSearch = '';
+let liveMemberOffice = 'all';
+let liveNetworkMode = 'village'; // 'village' | 'personal'
+let liveNetworkVillageFilter = 'all';
+let learningLoadGeneration = 0;
+let knowledgeLoadGeneration = 0;
+let honorsLoadGeneration = 0;
+let librarySearch = '';
+let libraryConnectionFilter = 'all';
+let libraryAppliedFilter = 'all';
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    const saved = raw ? JSON.parse(raw) : {};
+    const settings = saved.settings && typeof saved.settings === 'object'
+      ? saved.settings
+      : {};
+
+    return {
+      ...structuredClone(EMPTY_STATE),
+      settings: {
+        ...EMPTY_STATE.settings,
+        registrationUrl: settings.registrationUrl || '',
+        resultUrl: settings.resultUrl || '',
+        gate1Url: settings.gate1Url || '',
+        larkBase: settings.larkBase || DEFAULT_BASE,
+      },
+    };
+  } catch {
+    return structuredClone(EMPTY_STATE);
+  }
+}
+function persist() {
+  try {
+    const safeState = {
+      settings: {
+        registrationUrl: STATE.settings.registrationUrl || '',
+        resultUrl: STATE.settings.resultUrl || '',
+        gate1Url: STATE.settings.gate1Url || '',
+        larkBase: STATE.settings.larkBase || DEFAULT_BASE,
+      },
+    };
+
+    localStorage.setItem(STORE_KEY, JSON.stringify(safeState));
+  } catch {
+    toast('Không lưu được cấu hình giao diện.', 'warn');
+  }
+}
+function esc(v) { return String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])) }
+function icon(name, size = 20) { const d = { bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-8h6v8"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', link: '<path d="M10 13a5 5 0 0 0 7 .3l3-3A5 5 0 0 0 13 3l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7-.3l-3 3A5 5 0 0 0 11 21l1.7-1.7"/>', network: '<circle cx="12" cy="12" r="3"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="M6 6l4 4m4 4 4 4M18 6l-4 4M10 14l-4 4"/>', calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/><path d="m9 16 2 2 4-4"/>', book: '<path d="M12 7c-2-2-5-2-9-2v15c4 0 7 0 9 2 2-2 5-2 9-2V5c-4 0-7 0-9 2z"/><path d="M12 7v15"/>', award: '<circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h3"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.5 1-1.9 3.2-1.7-.7a8 8 0 0 1-2.3 1.3l-.3 1.8h-3.6l-.4-1.8a8 8 0 0 1-2.3-1.3l-1.7.7L5 16.1l1.5-1A8 8 0 0 1 6.3 12l-1.5-1L6.7 7.7l1.7.8a8 8 0 0 1 2.3-1.4L11 5h3.6l.4 2.1a8 8 0 0 1 2.3 1.4l1.7-.8 1.9 3.3-1.5 1c.2 1 .2 2 0 3z"/>', check: '<path d="m4 12 5 5L20 6"/>', arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>', star: '<path d="m12 2 3.2 6.4 7.1 1-5.2 5.1 1.3 7.1-6.4-3.4-6.4 3.4 1.3-7.1-5.2-5.1 7.1-1z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>', users: '<circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 3a4 4 0 0 1 0 8m2 10v-3a7 7 0 0 0-3-5.7"/>', spark: '<path d="m12 2 2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/>', gift: '<rect x="3" y="9" width="18" height="12" rx="1"/><path d="M3 13h18M12 9v12M12 9s-7-2-7-5c0-3 6-2 7 5zm0 0s7-2 7-5c0-3-6-2-7 5z"/>', send: '<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 5 5"/>', external: '<path d="M14 4h6v6m0-6-9 9"/><path d="M19 14v6H4V5h6"/>', download: '<path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/>', close: '<path d="M5 5l14 14M19 5 5 19"/>', plus: '<path d="M12 5v14M5 12h14"/>', refresh: '<path d="M20 6v6h-6M4 18v-6h6"/><path d="M5 10a8 8 0 0 1 13-4l2 2M4 16l2 2a8 8 0 0 0 13-4"/>', info: '<circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10h.01"/>', play: '<path d="m7 4 14 8-14 8z"/>' }; return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:' + size + 'px;height:' + size + 'px;max-width:' + size + 'px;max-height:' + size + 'px;display:inline-block;vertical-align:middle;flex-shrink:0">' + (d[name] || d.info) + '</svg>' }
+function getPeople() { return SEED.people.map(p => ({ ...p, ...(STATE.profiles[p.id] || {}) })) }
+function person(id) { return getPeople().find(p => p.id === id) }
+function pic(p, size = 50) { return p.avatar ? '<img class="person-avatar" src="' + p.avatar + '" alt="Logo ' + esc(p.village) + '" style="height:' + size + 'px;width:' + size + 'px">' : '<div class="person-avatar" style="height:' + size + 'px;width:' + size + 'px">' + esc(p.office === 'HR' ? 'HR' : p.office === 'IT' ? 'IT' : 'AX') + '</div>' }
+function nameVillage(p) { return esc(p.village.replace(/^\S+\s*/, '')) }
+function getVillageLeaders() { return getPeople().filter(p => p.kind === 'Làng' || /^VIL-/.test(p.id)) }
+function villageLeader(name) { return getVillageLeaders().find(p => p.village === name) }
+function connLabel(c) {
+  if (c.type === 'village') {
+    const sName = c.seekerVillage || (c.seeker && person(c.seeker)?.village) || c.seekerName || 'Làng A';
+    const hName = c.helperVillage || (c.helper && person(c.helper)?.village) || c.helperName || 'Làng B';
+    return sName + ' ↔ ' + hName;
+  }
+  const sName = c.seekerName || (c.seeker && person(c.seeker)?.name) || 'Người học';
+  const hName = c.helperName || (c.helper && person(c.helper)?.name) || 'Người hướng dẫn';
+  return sName + ' ↔ ' + hName;
+}
+function connModalText(c) {
+  if (c.type === 'village') {
+    const sName = c.seekerVillage || (c.seeker && person(c.seeker)?.village) || 'Làng A';
+    const hName = c.helperVillage || (c.helper && person(c.helper)?.village) || 'Làng B';
+    const sRep = c.seekerName || (c.seeker && person(c.seeker)?.name) || '';
+    const hRep = c.helperName || (c.helper && person(c.helper)?.name) || '';
+    const repText = (sRep || hRep) ? (' (qua đại diện ' + (sRep || 'thành viên') + ' và ' + (hRep || 'thành viên') + ')') : '';
+    return sName + ' và ' + hName + repText;
+  }
+  const sName = c.seekerName || (c.seeker && person(c.seeker)?.name) || 'Người học';
+  const hName = c.helperName || (c.helper && person(c.helper)?.name) || 'Người hướng dẫn';
+  return sName + ' và ' + hName;
+}
+function toast(m, t = 'good') { const e = document.createElement('div'); e.className = 'toast ' + t; e.textContent = m; document.querySelector('#toasts').appendChild(e); setTimeout(() => e.remove(), 4100) }
+function validLink(s) { try { const u = new URL(s); return ['https:', 'http:'].includes(u.protocol) } catch (e) { return false } }
+function navigate(page) {
+  currentPage = PAGE_LABELS[page] ? page : 'home';
+  if (page === 'settings' && !LIVE.currentUser?.isAdmin) {
+    currentPage = 'home';
+    render();
+    return;
+  }
+  if (currentPage === 'matches') {
+    loadMatching();
+  }
+  if (currentPage === 'schedule') {
+    loadLearningData();
+  }
+  if (currentPage === 'library') {
+    loadKnowledge();
+  }
+  if (currentPage === 'awards') {
+    loadHonors();
+  }
+  if (currentPage === 'gate1') {
+    loadGate1();
+  }
+  if (['forms', 'settings'].includes(currentPage) && window.AXANH_LIVE_API && window.AXANH_LIVE_API.getFormsConfig) {
+    window.AXANH_LIVE_API.getFormsConfig().then((cfg) => {
+      if (cfg) {
+        let changed = false;
+        if (cfg.form01Url !== undefined && STATE.settings.registrationUrl !== cfg.form01Url) {
+          STATE.settings.registrationUrl = cfg.form01Url || '';
+          changed = true;
+        }
+        if (cfg.form02Url !== undefined && STATE.settings.resultUrl !== cfg.form02Url) {
+          STATE.settings.resultUrl = cfg.form02Url || '';
+          changed = true;
+        }
+        if (changed) {
+          persist();
+          render();
+        }
+      }
+    }).catch(() => {});
+  }
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function pageHeader(title, desc, action = '') { return '<div class="page-header"><div><div class="eyebrow">AXANH / ATED PRO</div><h1 class="page-title">' + esc(title) + '</h1>' + (desc ? '<p class="page-desc">' + desc + '</p>' : '') + '</div>' + action + '</div>' }
+function renderNav() {
+  const systemNav = LIVE.currentUser?.isAdmin
+    ? '<div class="nav-section">HỆ THỐNG</div><nav class="nav"><button type="button" data-action="nav" data-page="settings" class="' + (currentPage === 'settings' ? 'active' : '') + '">' + icon('settings') + ' Cấu hình tích hợp</button></nav>'
+    : '';
+  document.querySelector('#navArea').innerHTML = '<div class="nav-section">KHÁM PHÁ</div><nav class="nav">' + NAV.map(([id, l, ico]) => '<button type="button" data-action="nav" data-page="' + id + '" class="' + (currentPage === id ? 'active' : '') + '"><span class="nav-ico">' + icon(ico) + '</span>' + l + '</button>').join('') + '</nav>' + systemNav;
+}
+function stats() {
+  const active = Array.isArray(LIVE.connections)
+    ? LIVE.connections.length
+    : 0;
+
+  const passed = gateCounts().passed;
+  const gateValue = GATE1.loading || GATE1.error
+    ? '—'
+    : String(passed);
+
+  return [
+    { n: LIVE.connected ? String(LIVE.villages.length) : '—', label: 'Làng (Lark Base)', i: 'grid' },
+    { n: LIVE.connected ? String(LIVE.members.length) : '—', label: 'Thành viên (Lark Base)', i: 'users' },
+    { n: LIVE.connected && !LIVE.connectionsLoading ? String(active) : '—', label: 'Kết nối của tôi', i: 'link' },
+    { n: gateValue, label: 'Làng đạt Gate 1', i: 'shield' },
+  ].map(x => '<div class="stat"><div><div class="number">' + x.n + '</div><div class="label">' + x.label + '</div></div><div class="stat-icon">' + icon(x.i, 22) + '</div></div>').join('');
+}
+function hero() { return '<section class="hero"><div class="hero-content"><div class="hero-mark">✦ ATED PRO · PHIÊN CHỢ TRI THỨC</div><h1>Trao đúng điều mình có.<br><em>Giúp nhau cùng lớn lên.</em></h1><p>Đây là phiên chợ tri thức của AXANH: mỗi người mang tới một điều mình có thể trao đi, và cũng thành thật nói ra một điều mình đang cần được giúp. Từ những kết nối nhỏ đó, chúng ta tạo nên giá trị thật và cả hành trình Gate 1 cho Đại hội Làng năm nay.</p><div class="btnbar"><button class="btn btn-gold" data-action="hero-open-form">' + icon('plus') + ' Mở gian hàng của tôi</button><button class="btn" data-action="nav" data-page="gate1">' + icon('shield') + ' Xem Gate 1</button></div></div><div class="hero-visual"><div class="orbit"></div><div class="orbit"></div><div class="orb-center"><img src="' + SEED.whiteLogo + '" alt="Logo AXANH"></div><div class="orb a">🌱</div><div class="orb b">💡</div><div class="orb c">🤝</div><div class="orb d">📚</div><div class="orb e">✨</div></div></section>' }
+function homeVillageBoothRow(booth) {
+  const village = LIVE.villages.find(item =>
+    item.id === booth.villageId || item.name === booth.villageName || item.name === booth.authorVillageName
+  );
+  const name = booth.villageName || booth.authorVillageName || village?.name || 'Làng';
+  const logo = villageLogoHtml(booth.villageIconUrl || village?.iconUrl, name, 43);
+  const offer = booth.offer || booth.offerTag || 'Chưa cập nhật nội dung chia sẻ';
+  return '<button type="button" class="sample-row" data-action="open-village-market" style="width:100%;text-align:left;background:#fff;font:inherit;cursor:pointer">'
+    + logo + '<span><b>' + esc(name) + '</b><small>' + esc(offer) + '</small></span>'
+    + '<span class="go">' + icon('arrow', 14) + '</span></button>';
+}
+
+function homeVillageBoothPanel() {
+  const booths = LIVE.booths.filter(booth => booth.boothType === 'village').slice(0, 4);
+  let content;
+  if (LIVE.boothsLoading) {
+    content = '<div class="empty">Đang tải gian hàng Làng từ Phiên chợ tri thức…</div>';
+  } else if (LIVE.boothsError) {
+    content = '<div class="empty">' + esc(LIVE.boothsError) + ' <button class="btn small" data-action="refresh-booths">Thử lại</button></div>';
+  } else if (booths.length) {
+    content = booths.map(homeVillageBoothRow).join('');
+  } else {
+    content = '<div class="empty">Chưa có gian hàng Làng trong Phiên chợ tri thức.</div>';
+  }
+  return '<div class="panel"><div class="panel-head"><h3>Gian hàng Làng từ Phiên chợ tri thức</h3>'
+    + '<button class="btn small" data-action="open-village-market">Xem tất cả ' + icon('arrow', 14) + '</button></div>'
+    + '<div class="sample-list">' + content + '</div></div>';
+}
+
+function home() {
+  return hero()
+    + '<section style="margin-top:19px" class="stat-grid">' + stats() + '</section>'
+    + '<div class="section-title"><h2>Hành trình của Phiên chợ tri thức</h2><span>Từ kết nối nhỏ đến điều kiện Quán quân</span></div>'
+    + '<div class="dash-columns"><div class="panel"><div class="panel-head"><h3>Từ một nhu cầu đến một giá trị mới</h3><span class="tag gold">4 bước xuyên suốt</span></div>'
+    + '<div class="steps"><div class="step"><span class="step-num">01 / CHIA SẺ</span><b>Điều tôi có thể trao</b><p>Mỗi người mở gian hàng tri thức, nói rõ điều mình có thể giúp.</p></div>'
+    + '<div class="step"><span class="step-num">02 / KẾT NỐI</span><b>Tìm người phù hợp</b><p>Ghép cặp theo nhu cầu, kỹ năng và thời gian phù hợp.</p></div>'
+    + '<div class="step"><span class="step-num">03 / THỰC HÀNH</span><b>Học và áp dụng</b><p>Người nhận thử áp dụng vào công việc để tạo kết quả thật.</p></div>'
+    + '<div class="step"><span class="step-num">04 / XÁC NHẬN</span><b>Đi tới Gate 1</b><p>Người nhận xác nhận giá trị, BTC thẩm định điều kiện Quán quân.</p></div></div>'
+    + '<div class="lightbar"><button class="btn btn-primary small" data-action="nav" data-page="forms">' + icon('form') + ' Xem hai biểu mẫu</button>'
+    + '<button class="btn small" data-action="nav" data-page="gate1">' + icon('shield') + ' Hành trình Gate 1</button></div></div>'
+    + homeVillageBoothPanel() + '</div>'
+    + '<div class="section-title"><h2>Điểm nhấn cần nhớ</h2><span>Đúng tinh thần ATED PRO và Đại hội Làng 2026</span></div>'
+    + '<div class="grid3"><div class="knowledge-card"><div class="row-flex"><span class="knowledge-ico">' + icon('gift', 24) + '</span><span class="tag gold">Tinh thần</span></div>'
+    + '<h3>Cho đi điều mình muốn nhận</h3><p>Muốn có sự hỗ trợ, hãy sẵn sàng hỗ trợ. Muốn có tri thức tốt hơn, hãy góp phần tạo ra tri thức tốt hơn cho người khác.</p></div>'
+    + '<div class="knowledge-card"><div class="row-flex"><span class="knowledge-ico">' + icon('check', 24) + '</span><span class="tag teal">Hiệu quả</span></div>'
+    + '<h3>Không dừng ở một buổi chia sẻ</h3><p>Giá trị chỉ thật sự được ghi nhận khi người nhận đã áp dụng và cảm thấy công việc hoặc thói quen của mình tiến bộ hơn.</p></div>'
+    + '<div class="knowledge-card"><div class="row-flex"><span class="knowledge-ico">' + icon('shield', 24) + '</span><span class="tag">Gate 1</span></div>'
+    + '<h3>Điều kiện, không phải điểm thưởng</h3><p>Gate 1 là điều kiện đủ tư cách xét Quán quân. App này giúp nhìn rõ hành trình ấy thay vì chờ tổng hợp vào cuối chặng.</p></div></div>';
+}
+function personCard(p) { return '<article class="person-card"><div class="person-head">' + pic(p, 57) + '<div><b>' + esc(p.name) + '</b><small>' + esc(p.village) + ' · ' + esc(p.office) + '</small></div><span class="kind-tag">' + (p.confirmed ? 'Đã xác nhận' : 'DEMO') + '</span></div><div class="offerneed"><div><span class="row-label">' + icon('gift', 11) + ' Có thể chia sẻ</span><strong>' + esc(p.offer) + '</strong></div><div class="tags">' + (p.offerTags || []).map(t => '<span class="tag teal">' + esc(t) + '</span>').join('') + '</div><div><span class="row-label">' + icon('book', 11) + ' Muốn học</span><strong>' + esc(p.need) + '</strong></div></div><button class="btn small" data-action="profile" data-id="' + p.id + '">Xem hồ sơ ' + icon('arrow', 15) + '</button></article>' }
+let marketTab = 'personal';
+
+function personalBoothCard(b) {
+  const avatarHtml = b.authorAvatarUrl
+    ? '<img src="' + esc(b.authorAvatarUrl) + '" alt="' + esc(b.authorName) + '" style="width:52px;height:52px;object-fit:cover;border-radius:50%;display:block" onerror="this.style.display=\'none\';">'
+    : '<div style="width:52px;height:52px;border-radius:50%;background:#1a3a6e;display:grid;place-items:center;color:#fff;font-weight:700;font-size:17px">' + esc((b.authorName || 'AX')[0].toUpperCase()) + '</div>';
+  const isOwn = LIVE.currentUser && (
+    b.authorMemberId === LIVE.currentUser.memberId ||
+    (b.authorName && LIVE.currentUser.name && b.authorName.toLowerCase() === LIVE.currentUser.name.toLowerCase())
+  );
+  return '<article class="person-card">'
+    + '<div class="person-head">'
+    + '<div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0">' + avatarHtml + '</div>'
+    + '<div><b>' + esc(b.authorName || 'Thành viên') + '</b><small>' + esc(b.authorVillageName || '—') + ' · ' + esc(b.authorOffice || '—') + '</small></div>'
+    + '<span class="kind-tag">' + (isOwn ? '● Của tôi' : (b.boothId || '—')) + '</span>'
+    + '</div>'
+    + '<div class="offerneed">'
+    + '<div><span class="row-label">' + icon('gift', 11) + ' Có thể chia sẻ</span><strong>' + esc(b.offer || '—') + '</strong></div>'
+    + '<div class="tags"><span class="tag teal">' + esc(b.offerTag || '') + '</span></div>'
+    + '<div><span class="row-label">' + icon('book', 11) + ' Muốn học</span><strong>' + esc(b.need || '—') + '</strong></div>'
+    + '<div class="tags"><span class="tag">' + esc(b.needTag || '') + '</span></div>'
+    + (b.preferredFormat ? '<div><span class="row-label">' + icon('link', 11) + ' Hình thức</span><small>' + esc(b.preferredFormat) + '</small></div>' : '')
+    + '</div>'
+    + '</article>';
+}
+
+function getVillageBoothConnections(booth) {
+  const villageId = booth.villageId || LIVE.villages.find(v =>
+    v.name === booth.villageName || v.name === booth.authorVillageName
+  )?.id;
+  const boothRecordId = booth.recordId || '';
+  const boothId = booth.boothId || '';
+  const byVillage = new Map();
+
+  (LIVE.connections || []).forEach(c => {
+    if (c.connectionType !== 'village' || !['Accepted', 'Pending'].includes(c.status)) return;
+    const sourceBoothMatches =
+      (boothRecordId && c.sourceBoothRecordId === boothRecordId) ||
+      (boothId && c.sourceBooth?.boothId === boothId);
+    const targetBoothMatches =
+      (boothRecordId && c.targetBoothRecordId === boothRecordId) ||
+      (boothId && c.targetBooth?.boothId === boothId);
+    const sourceVillageId = c.sourceVillageId || c.sourceBooth?.villageId;
+    const targetVillageId = c.targetVillageId || c.targetBooth?.villageId;
+    const isSource = sourceBoothMatches || (!targetBoothMatches && villageId && sourceVillageId === villageId);
+    const isTarget = targetBoothMatches || (!sourceBoothMatches && villageId && targetVillageId === villageId);
+    if (!isSource && !isTarget) return;
+
+    const otherVillageId = isSource ? targetVillageId : sourceVillageId;
+    const otherVillageName = isSource
+      ? (c.targetVillageName || c.targetBooth?.villageName)
+      : (c.seekerVillageName || c.sourceBooth?.villageName);
+    const otherVillage = LIVE.villages.find(v =>
+      (otherVillageId && v.id === otherVillageId) || (otherVillageName && v.name === otherVillageName)
+    );
+    const name = otherVillage?.name || otherVillageName;
+    if (!name) return;
+
+    const key = otherVillage?.id || otherVillageId || name;
+    const existing = byVillage.get(key);
+    if (!existing || (c.status === 'Accepted' && existing.status !== 'Accepted')) {
+      byVillage.set(key, {
+        id: otherVillage?.id || otherVillageId || '',
+        name,
+        iconUrl: otherVillage?.iconUrl || '',
+        status: c.status,
+        createdAt: c.createdAt,
+      });
+    }
+  });
+
+  return [...byVillage.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
+
+function villageBoothCard(b) {
+  const v = LIVE.villages.find(x => x.id === b.villageId || (b.authorVillageName && x.name === b.authorVillageName));
+  const logoUrl = b.villageIconUrl || v?.iconUrl;
+  const villageName = b.villageName || b.authorVillageName || v?.name || 'Làng';
+  const boothConnections = getVillageBoothConnections(b);
+  const acceptedConnections = boothConnections.filter(c => c.status === 'Accepted').length;
+  const pendingConnections = boothConnections.filter(c => c.status === 'Pending').length;
+  const boothKey = b.boothId || b.recordId || '';
+  const connectedVillages = boothConnections.slice(0, 3).map(c =>
+    '<span title="' + esc(c.name) + '" style="display:inline-flex;border:2px solid #fff;border-radius:50%;overflow:hidden">' + villageLogoHtml(c.iconUrl, c.name, 28) + '</span>'
+  ).join('');
+  const moreVillages = boothConnections.length > 3
+    ? '<span style="width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:800;border:2px solid #fff">+' + (boothConnections.length - 3) + '</span>'
+    : '';
+  const logoHtml = logoUrl
+    ? '<img src="' + esc(logoUrl) + '" alt="' + esc(villageName) + '" style="width:52px;height:52px;object-fit:contain;border-radius:12px;background:#fff;padding:4px;border:1px solid #dbe4ef;display:block" onerror="this.style.display=\'none\';">'
+    : '<div style="width:52px;height:52px;border-radius:12px;background:#dbeafe;color:#1e40af;display:grid;place-items:center;font-weight:800;font-size:16px;border:1px solid #bfdbfe">🏛️</div>';
+
+  const isRegisteredByMe = LIVE.currentUser && (
+    b.authorMemberId === LIVE.currentUser.memberId ||
+    (b.authorName && LIVE.currentUser.name && b.authorName.toLowerCase() === LIVE.currentUser.name.toLowerCase())
+  );
+
+  return '<article class="person-card village-booth-card" style="border-top:3px solid #2563eb">'
+    + '<div class="person-head">'
+    + '<div style="width:52px;height:52px;flex-shrink:0">' + logoHtml + '</div>'
+    + '<div><b>' + esc(villageName) + '</b><small>' + esc(b.authorOffice || v?.office || '—') + ' · <span style="color:#2563eb;font-weight:700">Gian hàng Làng</span></small></div>'
+    + '<span class="kind-tag" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe">' + esc(b.boothId || 'LÀNG') + '</span>'
+    + '</div>'
+    + '<div class="offerneed">'
+    + '<div><span class="row-label">' + icon('gift', 11) + ' Làng có thể chia sẻ</span><strong>' + esc(b.offer || '—') + '</strong></div>'
+    + '<div class="tags"><span class="tag teal">' + esc(b.offerTag || '') + '</span></div>'
+    + '<div><span class="row-label">' + icon('book', 11) + ' Làng mong muốn học</span><strong>' + esc(b.need || '—') + '</strong></div>'
+    + '<div class="tags"><span class="tag gold">' + esc(b.needTag || '') + '</span></div>'
+    + (b.preferredFormat ? '<div><span class="row-label">' + icon('link', 11) + ' Hình thức</span><small>' + esc(b.preferredFormat) + '</small></div>' : '')
+    + '</div>'
+    + '<button type="button" data-action="open-village-connections" data-id="' + esc(boothKey) + '" style="width:100%;margin-top:10px;padding:8px 10px;border:1px solid #dbeafe;border-radius:10px;background:#f8fbff;display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer">'
+    + '<span style="font-size:10px;font-weight:800;letter-spacing:.04em;color:#315b87;white-space:nowrap">🔗 LÀNG ĐÃ KẾT NỐI</span>'
+    + '<span style="display:flex;align-items:center;gap:7px;min-width:0">'
+    + '<span style="display:flex;align-items:center">' + connectedVillages + moreVillages + '</span>'
+    + '<span style="display:flex;flex-direction:column;gap:2px;font-size:10px;white-space:nowrap">'
+    + '<b style="color:#15803d">✓ ' + acceptedConnections + ' đã kết nối</b>'
+    + '<b style="color:#b45309">◷ ' + pendingConnections + ' chờ xác nhận</b>'
+    + '</span><span style="color:#2563eb;font-size:18px">›</span>'
+    + '</span></button>'
+    + '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:#64748b">'
+    + '<span>Đăng ký bởi: <b style="color:#0f172a">' + esc(b.authorName || 'Thành viên') + '</b>' + (isRegisteredByMe ? ' <span class="tag" style="font-size:10px;padding:1px 5px">Tôi đăng ký</span>' : '') + '</span>'
+    + (b.createdAt ? '<span style="font-size:11px">' + new Date(b.createdAt).toLocaleDateString('vi-VN') + '</span>' : '')
+    + '</div>'
+    + '</article>';
+}
+
+function boothCard(b) {
+  return b.boothType === 'village' ? villageBoothCard(b) : personalBoothCard(b);
+}
+
+function market() {
+  const headerBtn = '<button class="btn btn-primary" data-action="open-form" data-form="registration" data-default-type="' + esc(marketTab) + '">' + icon('plus') + ' Đăng ký gian hàng</button>';
+  const header = pageHeader('Gian hàng tri thức', '', headerBtn);
+
+  const personalBooths = LIVE.booths.filter(b => b.boothType === 'personal');
+  const villageBooths = LIVE.booths.filter(b => b.boothType === 'village');
+
+  const tabs = '<div class="market-tabs" style="display:flex;gap:10px;margin:18px 0 16px;flex-wrap:wrap">'
+    + '<button class="btn ' + (marketTab === 'personal' ? 'btn-primary' : '') + '" data-action="set-market-tab" data-tab="personal">'
+    + icon('users', 16) + ' Gian hàng Cá nhân (' + personalBooths.length + ')'
+    + '</button>'
+    + '<button class="btn ' + (marketTab === 'village' ? 'btn-primary' : '') + '" data-action="set-market-tab" data-tab="village">'
+    + icon('network', 16) + ' Gian hàng Làng (' + villageBooths.length + ')'
+    + '</button>'
+    + '</div>';
+
+  const searchPlaceholder = marketTab === 'village'
+    ? 'Tìm theo tên làng, kỹ năng chia sẻ, chủ đề học...'
+    : 'Tìm tên, kỹ năng, chủ đề học...';
+
+  const searchBar = '<div class="search-area"><div class="field-search">' + icon('search') + '<input id="marketSearch" placeholder="' + esc(searchPlaceholder) + '" value="' + esc(marketSearch) + '"></div>'
+    + '<select class="select" id="officeFilter"><option value="all">Tất cả văn phòng</option>'
+    + ['VP1', 'VP2', 'VPC', 'IT', 'HR'].map(x => '<option ' + (officeFilter === x ? 'selected' : '') + '>' + x + '</option>').join('')
+    + '</select></div>';
+
+  // Nếu đang tải booths
+  if (LIVE.boothsLoading) {
+    return header + tabs + searchBar + '<div class="status-banner"><div class="live-spinner" style="display:inline-block;width:14px;height:14px;border:2px solid #fff3;border-top-color:#f2c657;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px"></div>Đang tải dữ liệu gian hàng từ Lark Base...</div><div id="marketGrid" class="grid3"></div>';
+  }
+  if (LIVE.boothsError) {
+    return header + tabs + searchBar + '<div class="status-banner">' + icon('info') + ' ' + esc(LIVE.boothsError) + ' <button class="btn small" data-action="refresh-booths">Thử lại</button></div><div id="marketGrid" class="grid3"></div>';
+  }
+
+  // Lọc booths theo tab đang chọn
+  const targetList = marketTab === 'village' ? villageBooths : personalBooths;
+  const q = marketSearch.toLocaleLowerCase();
+  const filtered = targetList.filter(b => {
+    const hay = [b.authorName, b.villageName, b.authorVillageName, b.authorOffice, b.offer, b.offerTag, b.need, b.needTag, b.boothId].filter(Boolean).join(' ').toLocaleLowerCase();
+    return hay.includes(q) && (officeFilter === 'all' || b.authorOffice === officeFilter);
+  });
+
+  let grid;
+  if (filtered.length === 0 && targetList.length === 0) {
+    if (marketTab === 'village') {
+      grid = '<div class="empty" style="grid-column:1/-1">' + icon('network', 38)
+        + '<b>Chưa có gian hàng Làng nào được đăng ký</b>'
+        + '<p>Hãy mở gian hàng đầu tiên cho làng của bạn! Chia sẻ thế mạnh chuyên môn và nhu cầu học tập của Làng.</p>'
+        + '<button class="btn btn-primary" data-action="open-form" data-form="registration" data-default-type="village">' + icon('plus') + ' Mở gian hàng cho Làng</button>'
+        + '</div>';
+    } else {
+      grid = '<div class="empty" style="grid-column:1/-1">' + icon('gift', 38)
+        + '<b>Chưa có gian hàng Cá nhân nào</b>'
+        + '<p>Hãy mở gian hàng đầu tiên! Chia sẻ điều bạn có thể dạy và điều bạn muốn học.</p>'
+        + '<button class="btn btn-primary" data-action="open-form" data-form="registration" data-default-type="personal">' + icon('plus') + ' Mở gian hàng của tôi</button>'
+        + '</div>';
+    }
+  } else if (filtered.length === 0) {
+    grid = '<div class="empty" style="grid-column:1/-1">Không tìm thấy gian hàng phù hợp với từ khóa.</div>';
+  } else {
+    grid = marketTab === 'village' ? filtered.map(villageBoothCard).join('') : filtered.map(personalBoothCard).join('');
+  }
+
+  return header + tabs + searchBar + '<div id="marketGrid" class="grid3">' + grid + '</div>';
+}
+function memberAvatarHtml(url, name, size = 52) {
+  if (url) {
+    return '<img src="' + esc(url) + '" alt="' + esc(name) + '" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:50%;display:block" onerror="this.style.display=\'none\';">';
+  }
+  const initial = (name || 'AX').trim()[0]?.toUpperCase() || 'A';
+  return '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;background:#1a3a6e;display:grid;place-items:center;color:#fff;font-weight:700;font-size:' + Math.round(size * 0.35) + 'px">' + esc(initial) + '</div>';
+}
+
+function villageLogoHtml(url, name, size = 52) {
+  if (url) {
+    return '<img src="' + esc(url) + '" alt="' + esc(name) + '" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:12px;display:block" onerror="this.style.display=\'none\';">';
+  }
+  return '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:12px;background:#eef4ff;display:grid;place-items:center;color:#1e3a8a;font-weight:700;font-size:' + Math.round(size * 0.45) + 'px">🏛️</div>';
+}
+
+async function loadMatchingSuggestions() {
+  if (!MATCHING.selectedBoothId) {
+    MATCHING.suggestionsData = null;
+    render();
+    return;
+  }
+  MATCHING.loading = true;
+  render();
+  try {
+    const data = await window.AXANH_LIVE_API.getMatchingSuggestions({
+      mode: MATCHING.mode,
+      boothId: MATCHING.selectedBoothId,
+    });
+    MATCHING.suggestionsData = data;
+    MATCHING.error = '';
+  } catch (err) {
+    console.error('[Smart Matching] Suggestions error:', err);
+    MATCHING.error = err.message || 'Không thể tải đề xuất kết nối.';
+  } finally {
+    MATCHING.loading = false;
+    render();
+  }
+}
+
+async function loadMatching(resetBooth = false) {
+  if (!window.AXANH_LIVE_API || !window.AXANH_LIVE_API.getMatchingContext) return;
+  MATCHING.loading = true;
+  MATCHING.error = '';
+  render();
+
+  try {
+    const isPersonal = MATCHING.mode === 'personal';
+    const targetMemberId = (isPersonal && MATCHING.selectedMemberId) ? MATCHING.selectedMemberId : undefined;
+    const targetVillageId = (!isPersonal && MATCHING.selectedVillageId) ? MATCHING.selectedVillageId : undefined;
+
+    const context = await window.AXANH_LIVE_API.getMatchingContext({
+      memberId: targetMemberId,
+      villageId: targetVillageId,
+    });
+    MATCHING.context = context;
+
+    // Available booths for current mode
+    const booths = isPersonal ? (context.personalBooths || []) : (context.villageBooths || []);
+
+    const hasSelected = booths.some((b) => b.boothId === MATCHING.selectedBoothId);
+    if (!hasSelected || resetBooth) {
+      MATCHING.selectedBoothId = booths.length > 0 ? booths[0].boothId : null;
+    }
+
+    if (MATCHING.selectedBoothId) {
+      const suggestions = await window.AXANH_LIVE_API.getMatchingSuggestions({
+        mode: MATCHING.mode,
+        boothId: MATCHING.selectedBoothId,
+      });
+      MATCHING.suggestionsData = suggestions;
+    } else {
+      MATCHING.suggestionsData = null;
+    }
+  } catch (err) {
+    console.error('[Smart Matching] Context error:', err);
+    MATCHING.error = err.message || 'Không thể tải ngữ cảnh Smart Matching.';
+  } finally {
+    MATCHING.loading = false;
+    render();
+  }
+}
+
+function getExistingLiveConnection(s, curBooth, isPersonal) {
+  if (!s || !curBooth) return null;
+  const sBooth = s.targetBoothId || s.targetRecordId || s.boothId;
+  const curBoothId = curBooth.boothId || curBooth.recordId;
+  if (Array.isArray(LIVE.connections)) {
+    const live = LIVE.connections.find(c => {
+      const srcId = c.sourceBooth?.boothId || c.sourceBooth?.recordId;
+      const tgtId = c.targetBooth?.boothId || c.targetBooth?.recordId;
+      if (srcId === curBoothId && tgtId === sBooth) return true;
+      if (srcId === sBooth && tgtId === curBoothId) return true;
+      if (isPersonal && c.connectionType === 'personal') {
+        if (c.requestedBy === curBooth.authorMemberId && c.targetMemberId === s.targetMemberId) return true;
+        if (c.requestedBy === s.targetMemberId && c.targetMemberId === curBooth.authorMemberId) return true;
+      }
+      if (!isPersonal && c.connectionType === 'village') {
+        const sVil = curBooth.villageId;
+        const tVil = s.targetVillageId;
+        if (sVil && tVil && ((c.sourceVillageId === sVil && c.targetVillageId === tVil) || (c.sourceVillageId === tVil && c.targetVillageId === sVil))) return true;
+      }
+      return false;
+    });
+    if (live) return live;
+  }
+  return null;
+}
+
+function isLiveMatched(s, curBooth, isPersonal) {
+  const existing = getExistingLiveConnection(s, curBooth, isPersonal);
+  return Boolean(existing && (existing.status === 'Accepted' || existing.status === 'Pending'));
+}
+
+async function createLiveMatch(idx) {
+  const suggestions = MATCHING.suggestionsData?.suggestions || [];
+  const s = suggestions[idx];
+  const isPersonal = MATCHING.mode === 'personal';
+  const booths = isPersonal ? (MATCHING.context?.personalBooths || []) : (MATCHING.context?.villageBooths || []);
+  const curBooth = booths.find(b => b.boothId === MATCHING.selectedBoothId) || booths[0];
+  if (!s || !curBooth) return;
+
+  if (!LIVE.currentUser) {
+    openModal(
+      'Yêu cầu đăng nhập',
+      '<div style="text-align:center;padding:14px 4px">'
+      + '<div style="font-size:38px;margin-bottom:12px">🔒</div>'
+      + '<h3 style="margin:0 0 8px;font-size:16px;color:var(--navy)">Bạn chưa đăng nhập</h3>'
+      + '<p style="font-size:13.5px;color:#64748b;line-height:1.5;margin:0 0 16px">'
+      + 'Đề xuất kết nối sẽ được ghi trực tiếp vào Lark Base (<b>T14_Connections</b>) dưới danh nghĩa thành viên của bạn.<br>'
+      + 'Vui lòng đăng nhập bằng Email OTP hoặc tài khoản Lark để tiếp tục.'
+      + '</p>'
+      + '</div>',
+      '<button class="btn btn-primary" data-action="re-login" style="width:100%;justify-content:center">Đăng nhập ngay</button>'
+    );
+    return;
+  }
+
+  const existing = getExistingLiveConnection(s, curBooth, isPersonal);
+  if (existing && existing.status === 'Accepted') {
+    toast(isPersonal ? 'Hai người đã có một kết nối chính thức.' : 'Hai Làng đã có một kết nối chính thức.', 'warn');
+    return;
+  }
+  if (existing && existing.status === 'Pending') {
+    toast('Đã có lời mời kết nối đang chờ xác nhận.', 'warn');
+    return;
+  }
+
+  const targetBoothId = s.targetBoothId || s.targetRecordId || s.boothId;
+  if (!targetBoothId) {
+    toast('Không xác định được mã gian hàng đích để kết nối.', 'error');
+    return;
+  }
+
+  const buttons = document.querySelectorAll('[data-action="create-live-match"][data-idx="' + idx + '"]');
+  buttons.forEach(btn => {
+    btn.disabled = true;
+    btn.dataset.origHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></span> Đang gửi...';
+  });
+
+  try {
+    if (!window.AXANH_LIVE_API ||
+        typeof window.AXANH_LIVE_API.createConnection !== 'function') {
+      throw new Error('Dịch vụ kết nối chưa sẵn sàng. Vui lòng thử lại sau.');
+    }
+
+    await window.AXANH_LIVE_API.createConnection({
+      sourceBoothId: curBooth.boothId || curBooth.recordId,
+      targetBoothId,
+      connectionType: isPersonal ? 'personal' : 'village',
+    });
+
+    toast((isPersonal
+      ? 'Đã gửi lời mời kết nối tới ' + s.displayName
+      : 'Đã gửi lời mời kết nối tới ' + s.targetVillageName)
+      + '! Trạng thái: Chờ xác nhận.', 'success');
+
+    await loadLiveConnections();
+    closeModal();
+    render();
+  } catch (err) {
+    console.error('[Connection] Error creating connection:', err);
+    if (err.status === 401 || err.message?.includes('Phiên đăng nhập') || err.message?.includes('Unauthorized')) {
+      openModal(
+        'Phiên đăng nhập đã hết hạn',
+        '<div style="text-align:center;padding:14px 4px">'
+        + '<div style="font-size:38px;margin-bottom:12px">⌛</div>'
+        + '<h3 style="margin:0 0 8px;font-size:16px;color:var(--navy)">Phiên đăng nhập đã hết hạn</h3>'
+        + '<p style="font-size:13.5px;color:#64748b;line-height:1.5;margin:0 0 16px">'
+        + 'Phiên đăng nhập của bạn đã hết hạn do backend được khởi động lại hoặc cookie bảo mật đã hết hiệu lực.<br>'
+        + 'Vui lòng đăng nhập lại để tiếp tục gửi và xác nhận lời mời kết nối vào Lark Base.'
+        + '</p>'
+        + '</div>',
+        '<button class="btn btn-primary" data-action="re-login" style="width:100%;justify-content:center">Đăng nhập lại ngay</button>'
+      );
+    } else {
+      toast(err.message || 'Không thể tạo lời mời kết nối.', 'error');
+    }
+    buttons.forEach(btn => {
+      btn.disabled = false;
+      btn.innerHTML = btn.dataset.origHtml || (icon('link', 14) + ' Đề xuất kết nối');
+    });
+  }
+}
+
+function showMatchDetailModal(idx) {
+  const suggestions = MATCHING.suggestionsData?.suggestions || [];
+  const s = suggestions[idx];
+  if (!s) return;
+  const isPersonal = MATCHING.mode === 'personal';
+  const isVillage = !isPersonal;
+  const booths = isPersonal ? (MATCHING.context?.personalBooths || []) : (MATCHING.context?.villageBooths || []);
+  const curBooth = booths.find(b => b.boothId === MATCHING.selectedBoothId) || booths[0];
+  const already = isLiveMatched(s, curBooth, isPersonal);
+
+  const title = isVillage ? ('Chi tiết kết nối · ' + esc(s.targetVillageName)) : ('Chi tiết kết nối · ' + esc(s.displayName));
+  const avatarHtml = isVillage
+    ? villageLogoHtml(s.targetVillageIconUrl, s.targetVillageName, 64)
+    : memberAvatarHtml(s.avatarUrl, s.displayName, 64);
+
+  const subLine = isVillage
+    ? ('Đại diện: ' + esc(s.representativeName || 'Thành viên') + (s.targetOffice ? ' · ' + esc(s.targetOffice) : ''))
+    : (esc(s.villageName || '') + (s.office ? ' · ' + esc(s.office) : ''));
+
+  const isMatched = s.matchScore > 0;
+  const reasonsList = (s.matchReasons || []).map(r => '<div style="color:#0f5132;background:#d1e7dd;padding:6px 10px;border-radius:6px;font-size:12.5px;font-weight:600">✓ ' + esc(r) + '</div>').join('');
+  const reasonsHtml = isMatched
+    ? (reasonsList || '<div style="color:#64748b">Chưa có lý do chi tiết</div>')
+    : '<div style="color:#64748b;font-size:12.5px">Gian hàng từ Phiên chợ tri thức (chưa có điểm chung về chủ đề đã đăng ký, bạn vẫn có thể kết nối để trao đổi và học hỏi).</div>';
+
+  const scoreBadgeHtml = isMatched
+    ? '<span class="tag gold" style="font-size:13px;font-weight:700">' + s.matchScore + ' / 100 điểm</span>'
+    : '<span class="tag" style="background:#f1f5f9;color:#475569;font-size:12px;font-weight:600">Gian hàng tham khảo</span>';
+
+  const bodyHtml = '<div class="person-head" style="margin-bottom:20px;display:flex;align-items:center;gap:14px">'
+    + avatarHtml
+    + '<div>'
+    + '  <b style="font-size:17px">' + esc(isVillage ? s.targetVillageName : s.displayName) + '</b>'
+    + '  <div style="color:#64748b;font-size:13px;margin-top:2px">' + subLine + '</div>'
+    + '</div>'
+    + '<div style="margin-left:auto;text-align:right">'
+    + scoreBadgeHtml
+    + '</div>'
+    + '</div>'
+    + '<div class="kv"><span>Mã gian hàng</span><b>' + esc(s.targetBoothId || 'Chưa có') + '</b></div>'
+    + '<div class="kv"><span>Nội dung có thể chia sẻ</span><b>' + esc(s.offer || 'Chưa cập nhật') + '</b></div>'
+    + '<div class="kv"><span>Chủ đề chia sẻ</span><b>' + esc(s.offerTopic || (s.offerTags || []).join(', ') || 'Chưa cập nhật') + '</b></div>'
+    + '<div class="kv"><span>Hình thức mong muốn</span><b>' + esc(s.preferredFormat || 'Linh hoạt') + '</b></div>'
+    + '<div class="kv" style="margin-top:14px"><span>' + (isMatched ? 'Lý do đề xuất' : 'Tình trạng kết nối') + '</span>'
+    + '  <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">' + reasonsHtml + '</div>'
+    + '</div>'
+    + '<div class="note" style="margin-top:16px;background:#f0f7ff;border:1px solid #c7e0ff;color:#1e4c8a;border-radius:8px;padding:12px;font-size:13px;line-height:1.6">'
+    + '  ℹ️ <b>Gợi ý:</b> Bạn có thể bấm "Đề xuất kết nối" bên dưới để đưa vào danh sách kết nối trên Bản đồ tri thức AXANH và Lịch cùng học.'
+    + '</div>';
+
+  const existing = getExistingLiveConnection(s, curBooth, isPersonal);
+  let actionBtnHtml = '';
+  if (existing) {
+    if (existing.status === 'Accepted') {
+      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#dcfce7;color:#15803d;font-size:12.5px;font-weight:700">✓ Đã kết nối</span>';
+    } else if (existing.status === 'Pending') {
+      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#fef3c7;color:#b45309;font-size:12.5px;font-weight:700">⏳ Chờ xác nhận</span>';
+    } else if (existing.status === 'Rejected') {
+      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#fee2e2;color:#b91c1c;font-size:12.5px;font-weight:700">✕ Đã từ chối</span>';
+    } else {
+      actionBtnHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:20px;background:#f1f5f9;color:#64748b;font-size:12.5px;font-weight:600">Đã hủy</span>';
+    }
+  } else {
+    actionBtnHtml = '<button class="btn btn-primary" data-action="create-live-match" data-idx="' + idx + '">' + icon('link') + ' Đề xuất kết nối ngay</button>';
+  }
+
+  const footerHtml = '<button class="btn" data-action="close-modal">Đóng</button>' + actionBtnHtml;
+
+  openModal(title, bodyHtml, footerHtml);
+}
+
+function matches() {
+  if (!MATCHING.context && !MATCHING.loading && !MATCHING.error) {
+    loadMatching();
+  }
+
+  const mode = MATCHING.mode || 'personal';
+  const isPersonal = mode === 'personal';
+  const context = MATCHING.context || {
+    canManageMatching: false,
+    currentUser: LIVE.currentUser || { name: 'Thành viên', villageName: 'Chưa xác định' },
+    currentVillage: null,
+    personalBooths: [],
+    villageBooths: [],
+  };
+
+  const tabs = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px">'
+    + '<button class="btn ' + (isPersonal ? 'btn-primary' : '') + '" data-action="set-live-match-mode" data-mode="personal">Cá nhân ↔ Cá nhân</button>'
+    + '<button class="btn ' + (!isPersonal ? 'btn-primary' : '') + '" data-action="set-live-match-mode" data-mode="village">Làng ↔ Làng</button>'
+    + '</div>';
+
+  const header = pageHeader(
+    'Tìm người đồng hành',
+    '',
+    '<button class="btn" data-action="nav" data-page="network">' + icon('network') + ' Xem bản đồ</button>'
+  );
+
+  // Left panel construction
+  let leftPanelHtml = '';
+  const booths = isPersonal ? (context.personalBooths || []) : (context.villageBooths || []);
+  const curBooth = booths.find(b => b.boothId === MATCHING.selectedBoothId) || booths[0] || null;
+
+  if (isPersonal) {
+    const isAdmin = context.canManageMatching;
+    const eyebrow = isAdmin ? 'ĐANG TÌM NGƯỜI HƯỚNG DẪN CHO' : 'NHU CẦU HỌC TẬP CỦA TÔI';
+
+    let selectorHtml = '';
+    if (isAdmin && LIVE.members.length > 0) {
+      const selectedId = MATCHING.selectedMemberId || context.currentUser.memberId;
+      selectorHtml = '<div class="field" style="margin:14px 0 18px">'
+        + '<label>Chọn người học</label>'
+        + '<select id="matchingMemberSelect">'
+        + LIVE.members.map(m => '<option value="' + esc(m.id) + '" ' + (m.id === selectedId ? 'selected' : '') + '>' + esc(m.name) + ' – ' + esc(m.villageName || 'Không có làng') + '</option>').join('')
+        + '</select></div>';
+    }
+
+    const u = context.currentUser;
+    const avatar = memberAvatarHtml(u.avatarUrl, u.name, 58);
+    const profileCard = '<div class="person-head" style="margin:10px 0 18px">'
+      + avatar
+      + '<div><b>' + esc(u.name) + '</b><small>' + esc(u.villageName || 'Chưa xác định') + (u.office ? ' · ' + esc(u.office) : '') + '</small></div>'
+      + '</div>';
+
+    let boothSelectionHtml = '';
+    if (booths.length === 0) {
+      boothSelectionHtml = '<div class="empty" style="padding:16px 8px;margin:12px 0">'
+        + '<p style="font-size:13px;line-height:1.5;margin-bottom:12px">'
+        + (isAdmin
+            ? 'Thành viên này chưa có đăng ký gian hàng Cá nhân nào trong Lark Base.'
+            : 'Bạn chưa có đăng ký gian hàng Cá nhân. Hãy đăng ký nhu cầu học tập để tìm người đồng hành.')
+        + '</p>'
+        + (isAdmin ? '' : '<button class="btn btn-primary small" data-action="open-form" data-form="registration" data-default-type="personal">' + icon('plus', 14) + ' Đăng ký gian hàng</button>')
+        + '</div>';
+    } else {
+      boothSelectionHtml = '<div class="field" style="margin:14px 0 14px"><label>Chọn gian hàng cần hỗ trợ</label><select id="matchingBoothSelect">'
+        + booths.map(b => '<option value="' + esc(b.boothId) + '" ' + (b.boothId === (curBooth?.boothId) ? 'selected' : '') + '>' + esc(b.boothId) + ': ' + esc(b.needTopic || 'Nhu cầu') + ' – ' + esc((b.need || '').slice(0, 32)) + '</option>').join('')
+        + '</select></div>';
+    }
+
+    let detailHtml = '';
+    if (curBooth) {
+      const needTags = (curBooth.needTags || [curBooth.needTopic]).filter(Boolean);
+      const tagsHtml = needTags.map(t => '<span class="tag gold">' + esc(t) + '</span>').join('');
+      const formatHtml = curBooth.preferredFormat ? esc(curBooth.preferredFormat) : 'Linh hoạt';
+      const timeHtml = curBooth.availability ? new Date(curBooth.availability).toLocaleDateString('vi-VN') : 'Linh hoạt / Chưa hẹn';
+
+      detailHtml = '<div class="offerneed">'
+        + '<div><span class="row-label">ĐIỀU MUỐN HỌC</span><strong>' + esc(curBooth.need || 'Chưa cập nhật') + '</strong></div>'
+        + '<div class="tags">' + (tagsHtml || '<span class="tag">Chung</span>') + '</div>'
+        + '<div><span class="row-label">HÌNH THỨC MONG MUỐN</span><strong>' + formatHtml + '</strong></div>'
+        + '<div><span class="row-label">THỜI GIAN GỢI Ý</span><strong>' + timeHtml + '</strong></div>'
+        + '</div>'
+        + '<div class="lightbar"><button class="btn small" data-action="open-form" data-form="registration" data-default-type="personal">Mở thêm gian hàng</button></div>';
+    }
+
+    leftPanelHtml = '<aside class="panel matching-profile">'
+      + '<div class="eyebrow">' + eyebrow + '</div>'
+      + selectorHtml
+      + profileCard
+      + boothSelectionHtml
+      + detailHtml
+      + '</aside>';
+  } else {
+    // Village mode
+    const isAdmin = context.canManageMatching;
+    const eyebrow = isAdmin ? 'ĐANG TÌM LÀNG ĐỒNG HÀNH CHO' : 'NHU CẦU HỌC TẬP CỦA LÀNG';
+
+    let selectorHtml = '';
+    if (isAdmin && LIVE.villages.length > 0) {
+      const selectedId = MATCHING.selectedVillageId || context.currentVillage?.villageId;
+      selectorHtml = '<div class="field" style="margin:14px 0 18px">'
+        + '<label>Chọn Làng</label>'
+        + '<select id="matchingVillageSelect">'
+        + LIVE.villages.map(v => '<option value="' + esc(v.id) + '" ' + (v.id === selectedId ? 'selected' : '') + '>' + esc(v.name) + ' – ' + esc(v.office || '') + '</option>').join('')
+        + '</select></div>';
+    }
+
+    const cv = context.currentVillage;
+    const logo = cv ? villageLogoHtml(cv.iconUrl, cv.villageName, 58) : '<div style="font-size:32px">🏛️</div>';
+    const profileCard = '<div class="person-head" style="margin:10px 0 18px">'
+      + logo
+      + '<div><b>' + esc(cv?.villageName || 'Chưa xác định làng') + '</b><small>' + esc(cv?.office ? 'Văn phòng: ' + cv.office : 'AXANH') + '</small></div>'
+      + '</div>';
+
+    let boothSelectionHtml = '';
+    if (!cv) {
+      boothSelectionHtml = '<div class="empty" style="padding:16px 8px;margin:12px 0"><p style="color:var(--rose)">Chưa xác định được làng trực thuộc. Vui lòng liên hệ quản trị viên.</p></div>';
+    } else if (booths.length === 0) {
+      boothSelectionHtml = '<div class="empty" style="padding:16px 8px;margin:12px 0">'
+        + '<p style="font-size:13px;line-height:1.5;margin-bottom:12px">'
+        + (isAdmin
+            ? 'Làng này chưa có đăng ký gian hàng Làng nào trong Lark Base.'
+            : 'Làng của bạn chưa có đăng ký gian hàng Làng để tìm kết nối.')
+        + '</p>'
+        + (isAdmin ? '' : '<button class="btn btn-primary small" data-action="open-form" data-form="registration" data-default-type="village">' + icon('plus', 14) + ' Đăng ký gian hàng Làng</button>')
+        + '</div>';
+    } else {
+      boothSelectionHtml = '<div class="field" style="margin:14px 0 14px"><label>Chọn gian hàng Làng</label><select id="matchingBoothSelect">'
+        + booths.map(b => '<option value="' + esc(b.boothId) + '" ' + (b.boothId === (curBooth?.boothId) ? 'selected' : '') + '>' + esc(b.boothId) + ': ' + esc(b.needTopic || 'Nhu cầu') + ' – ' + esc((b.need || '').slice(0, 32)) + '</option>').join('')
+        + '</select></div>';
+    }
+
+    let detailHtml = '';
+    if (curBooth) {
+      const needTags = (curBooth.needTags || [curBooth.needTopic]).filter(Boolean);
+      const tagsHtml = needTags.map(t => '<span class="tag gold">' + esc(t) + '</span>').join('');
+      const formatHtml = curBooth.preferredFormat ? esc(curBooth.preferredFormat) : 'Linh hoạt';
+
+      detailHtml = '<div class="offerneed">'
+        + '<div><span class="row-label">ĐIỀU LÀNG MUỐN HỌC</span><strong>' + esc(curBooth.need || 'Chưa cập nhật') + '</strong></div>'
+        + '<div class="tags">' + (tagsHtml || '<span class="tag">Chung</span>') + '</div>'
+        + '<div><span class="row-label">HÌNH THỨC MONG MUỐN</span><strong>' + formatHtml + '</strong></div>'
+        + '</div>'
+        + '<div class="lightbar"><button class="btn small" data-action="open-form" data-form="registration" data-default-type="village">Đăng ký thêm gian hàng Làng</button></div>';
+    }
+
+    leftPanelHtml = '<aside class="panel matching-profile">'
+      + '<div class="eyebrow">' + eyebrow + '</div>'
+      + selectorHtml
+      + profileCard
+      + boothSelectionHtml
+      + detailHtml
+      + '</aside>';
+  }
+
+  // Right panel construction
+  let rightPanelHtml = '';
+  if (MATCHING.loading) {
+    rightPanelHtml = '<div><div class="empty" style="min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="spinner"></div><p style="margin-top:14px;color:#64748b">Đang phân tích và tìm kiếm kết nối phù hợp từ Lark Base...</p></div></div>';
+  } else if (MATCHING.error) {
+    rightPanelHtml = '<div><div class="empty" style="min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center"><p style="color:var(--rose);margin-bottom:14px;font-weight:600">Lỗi: ' + esc(MATCHING.error) + '</p><button class="btn btn-primary small" data-action="retry-matching">Thử lại</button></div></div>';
+  } else if (!curBooth) {
+    rightPanelHtml = '<div><div class="empty" style="min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center">'
+      + icon('search', 42)
+      + '<b style="margin-top:10px">Chưa có gian hàng nguồn để tìm kết nối</b>'
+      + '<p style="max-width:440px;margin-top:6px">Vui lòng đăng ký gian hàng ' + (isPersonal ? 'Cá nhân' : 'Làng') + ' để hệ thống phân tích và đề xuất kết nối phù hợp từ Lark Base.</p>'
+      + '</div></div>';
+  } else {
+    const suggestions = MATCHING.suggestionsData?.suggestions || [];
+    const count = suggestions.length;
+    const matchingCount = suggestions.filter(s => s.matchScore > 0).length;
+    const otherCount = suggestions.filter(s => s.matchScore === 0).length;
+
+    let titleText = '';
+    if (matchingCount > 0) {
+      titleText = matchingCount + ' gợi ý phù hợp' + (isPersonal ? '' : ' cấp Làng') + (otherCount > 0 ? ' (' + otherCount + ' gian hàng khác)' : '');
+    } else if (otherCount > 0) {
+      titleText = otherCount + ' gian hàng từ Phiên chợ tri thức' + (isPersonal ? '' : ' cấp Làng');
+    } else {
+      titleText = '0 gợi ý phù hợp' + (isPersonal ? '' : ' cấp Làng');
+    }
+
+    if (count === 0) {
+      rightPanelHtml = '<div><div class="section-title" style="margin:0 0 15px"><h2>' + titleText + '</h2><span>So khớp chủ đề và nội dung chia sẻ thực tế từ Lark Base</span></div>'
+        + '<div class="empty" style="min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center">'
+        + icon('search', 40)
+        + '<b style="margin-top:10px">Chưa có gian hàng nào khác</b>'
+        + '<p style="max-width:440px;margin-top:6px">Hiện chưa tìm thấy gian hàng nào khác trong Phiên chợ tri thức để kết nối.</p>'
+        + '</div></div>';
+    } else {
+      let hasRenderedDivider = false;
+      const noticeHtml = matchingCount === 0 && otherCount > 0
+        ? ('<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#475569;line-height:1.5">'
+           + '<b>Chưa có gian hàng trùng chủ đề</b> với nhu cầu <i>"' + esc(curBooth?.needTopic || curBooth?.need || '') + '"</i>. '
+           + 'Dưới đây là <b>' + otherCount + ' gian hàng khác</b> đang mở trong Phiên chợ tri thức ' + (isPersonal ? 'của các thành viên' : 'của các Làng') + ' để bạn tham khảo và chủ động kết nối:'
+           + '</div>')
+        : '';
+
+      const cardsHtml = suggestions.map((s, idx) => {
+        const isMatched = s.matchScore > 0;
+        let dividerHtml = '';
+
+        if (!isMatched && matchingCount > 0 && !hasRenderedDivider) {
+          hasRenderedDivider = true;
+          dividerHtml = '<div style="display:flex;align-items:center;gap:12px;margin:26px 0 14px">'
+            + '<div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;display:flex;align-items:center;gap:6px">'
+            + icon('grid', 14)
+            + 'Các gian hàng khác trong Phiên chợ tri thức (' + otherCount + ')'
+            + '</div>'
+            + '<div style="flex:1;height:1px;background:#e2e8f0"></div>'
+            + '</div>';
+        }
+
+        const picHtml = isPersonal
+          ? memberAvatarHtml(s.avatarUrl, s.displayName, 59)
+          : villageLogoHtml(s.targetVillageIconUrl, s.targetVillageName, 59);
+
+        const heading = isPersonal ? esc(s.displayName) : esc(s.targetVillageName);
+        const subHeading = isPersonal
+          ? (esc(s.villageName || '') + (s.office ? ' · ' + esc(s.office) : '') + ' · Có thể giúp: <b>' + esc(s.offer) + '</b>')
+          : ('Đại diện: <b>' + esc(s.representativeName || 'Thành viên') + '</b>' + (s.targetOffice ? ' · ' + esc(s.targetOffice) : '') + ' · Có thể hỗ trợ: <b>' + esc(s.offer) + '</b>');
+
+        let tagsHtml = '';
+        if (isMatched) {
+          const commonTags = (s.commonTopics || []).map(t => '<span class="tag teal">Chung chủ đề: ' + esc(t) + '</span>').join('');
+          const reasonTags = (s.matchReasons || []).map(r => '<span class="tag gold">' + esc(r) + '</span>').join('');
+          const formatTag = s.sameFormat ? '<span class="tag">Cùng hình thức</span>' : '';
+          const timeTag = s.sameTime ? '<span class="tag">Khung giờ tương đồng</span>' : '';
+          const otherCountTag = s.otherMatchingBoothsCount > 0 ? '<span class="tag" style="background:#eef4ff;color:#2857a4">+' + s.otherMatchingBoothsCount + ' gian hàng khác</span>' : '';
+          tagsHtml = commonTags + reasonTags + formatTag + timeTag + otherCountTag;
+        } else {
+          const topicTag = s.offerTopic ? ('<span class="tag" style="background:#f1f5f9;color:#475569">Chủ đề: ' + esc(s.offerTopic) + '</span>') : '';
+          const noMatchTag = '<span class="tag" style="background:#fafafa;color:#94a3b8;border:1px dashed #cbd5e1">Chưa trùng chủ đề học</span>';
+          const formatTag = s.sameFormat ? '<span class="tag">Cùng hình thức</span>' : '';
+          const timeTag = s.sameTime ? '<span class="tag">Khung giờ tương đồng</span>' : '';
+          const otherCountTag = s.otherMatchingBoothsCount > 0 ? '<span class="tag" style="background:#eef4ff;color:#2857a4">+' + s.otherMatchingBoothsCount + ' gian hàng khác</span>' : '';
+          tagsHtml = topicTag + noMatchTag + formatTag + timeTag + otherCountTag;
+        }
+
+        const existing = getExistingLiveConnection(s, curBooth, isPersonal);
+        let matchButtonHtml = '';
+        if (existing) {
+          if (existing.status === 'Accepted') {
+            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#dcfce7;color:#15803d;font-size:12px;font-weight:700">✓ Đã kết nối</span>';
+          } else if (existing.status === 'Pending') {
+            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#fef3c7;color:#b45309;font-size:12px;font-weight:700">⏳ Chờ xác nhận</span>';
+          } else if (existing.status === 'Rejected') {
+            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#fee2e2;color:#b91c1c;font-size:12px;font-weight:700">✕ Đã từ chối</span>';
+          } else {
+            matchButtonHtml = '<span class="status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;background:#f1f5f9;color:#64748b;font-size:12px;font-weight:600">Đã hủy</span>';
+          }
+        } else {
+          matchButtonHtml = '<button class="btn btn-primary small" data-action="create-live-match" data-idx="' + idx + '">' + icon('link', 14) + ' Đề xuất kết nối</button>';
+        }
+
+        const scoreHtml = isMatched
+          ? ('<div class="score">' + s.matchScore + '<small>điểm gợi ý</small></div>')
+          : ('<div class="score" style="color:#94a3b8">—<small style="color:#94a3b8">tham khảo</small></div>');
+
+        const progressHtml = isMatched
+          ? ('<div class="progress"><span style="width:' + s.matchScore + '%"></span></div>')
+          : ('<div class="progress" style="opacity:0.35"><span style="width:0%"></span></div>');
+
+        return dividerHtml
+          + '<div class="match-card" ' + (!isMatched ? 'style="border-color:#e2e8f0;background:#ffffff;"' : '') + '>'
+          + '<div style="flex-shrink:0">' + picHtml + '</div>'
+          + '<div>'
+          + '  <h3>' + heading + '</h3>'
+          + '  <p>' + subHeading + '</p>'
+          + '  <div class="tags">' + tagsHtml + '</div>'
+          +    progressHtml
+          + '</div>'
+          + '<div style="text-align:right">'
+          +    scoreHtml
+          + '  <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap">'
+          +      matchButtonHtml
+          + '    <button class="btn small" data-action="view-match-detail" data-idx="' + idx + '">Xem chi tiết</button>'
+          + '  </div>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+
+      rightPanelHtml = '<div><div class="section-title" style="margin:0 0 15px"><h2>' + titleText + '</h2><span>' + (matchingCount > 0 ? 'Ưu tiên những kết nối tương thích năng lực và có đầu ra áp dụng thật' : 'Dựa trên danh sách gian hàng đăng ký từ Phiên chợ tri thức') + '</span></div>'
+        + noticeHtml
+        + cardsHtml
+        + '</div>';
+    }
+  }
+
+  return header + tabs + '<div class="match-layout">' + leftPanelHtml + rightPanelHtml + '</div>' + renderConnectionsManager();
+}
+
+function renderConnectionsManager() {
+  const currentMemberId = LIVE.currentUser?.memberId;
+  const inbox = Array.isArray(LIVE.inboxConnections) ? LIVE.inboxConnections : [];
+  const allMine = Array.isArray(LIVE.connections) ? LIVE.connections : [];
+  const sent = allMine.filter(c => c.requestedBy === currentMemberId);
+  const accepted = allMine.filter(c => c.status === 'Accepted');
+
+  let listHtml = '';
+  if (connectionsActiveTab === 'inbox') {
+    if (inbox.length === 0) {
+      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Hộp thư trống. Hiện tại không có lời mời kết nối nào đang chờ bạn xác nhận.</p></div>';
+    } else {
+      listHtml = inbox.map(c => {
+        const isPers = c.connectionType === 'personal';
+        const senderName = c.sourceBooth?.authorName || c.requestedBy;
+        const senderVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '—';
+        const senderAv = c.sourceBooth?.authorAvatarUrl || null;
+        const avHtml = memberAvatarHtml(senderAv, senderName, 44);
+        const offer = c.sourceBooth?.offer || 'Chia sẻ kiến thức chuyên môn';
+        const need = c.sourceBooth?.need || 'Học hỏi và trao đổi';
+        const createdDate = c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : '';
+
+        return '<div class="conn-item-card">'
+          + '<div class="conn-item-left">'
+          + avHtml
+          + '<div style="min-width:0">'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          + '  <b style="font-size:14px;color:var(--navy)">' + esc(senderName) + '</b>'
+          + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Gian hàng Làng') + '</span>'
+          + '  <small style="color:#64748b">' + esc(senderVil) + '</small>'
+          + '</div>'
+          + '<div style="font-size:12.5px;color:#334155;margin-top:4px">'
+          + '  <span><b>Có thể chia sẻ:</b> ' + esc(offer) + '</span>'
+          + '  <span style="margin:0 6px;color:#cbd5e1">·</span>'
+          + '  <span><b>Muốn học:</b> ' + esc(need) + '</span>'
+          + '</div>'
+          + '<small style="color:#94a3b8;margin-top:4px;display:block">Gửi ngày: ' + esc(createdDate) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
+          + '</div>'
+          + '</div>'
+          + '<div class="conn-item-right">'
+          + '<button class="btn btn-primary small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Accepted" style="background:#166534;border-color:#166534">' + icon('check', 13) + ' Đồng ý</button>'
+          + '<button class="btn small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Rejected" style="color:#b91c1c;border-color:#fca5a5">' + icon('close', 13) + ' Từ chối</button>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  } else if (connectionsActiveTab === 'sent') {
+    if (sent.length === 0) {
+      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Bạn chưa gửi lời mời kết nối nào.</p></div>';
+    } else {
+      listHtml = sent.map(c => {
+        const isPers = c.connectionType === 'personal';
+        const targetName = c.targetBooth?.authorName || c.targetBooth?.villageName || c.targetMemberId || 'Đối tác';
+        const targetVil = c.targetBooth?.authorVillageName || c.targetBooth?.villageName || c.targetVillageId || '—';
+        const targetAv = c.targetBooth?.authorAvatarUrl || null;
+        const avHtml = memberAvatarHtml(targetAv, targetName, 44);
+        const createdDate = c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : '';
+
+        let statusPill = '';
+        if (c.status === 'Accepted') {
+          statusPill = '<span class="status-badge" style="background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">✓ Đã chấp nhận</span>';
+        } else if (c.status === 'Pending') {
+          statusPill = '<span class="status-badge" style="background:#fef3c7;color:#b45309;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">⏳ Chờ xác nhận</span>';
+        } else if (c.status === 'Rejected') {
+          statusPill = '<span class="status-badge" style="background:#fee2e2;color:#b91c1c;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">✕ Đã từ chối</span>';
+        } else {
+          statusPill = '<span class="status-badge" style="background:#f1f5f9;color:#64748b;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">Đã hủy</span>';
+        }
+
+        const canCancel = c.status === 'Pending';
+        return '<div class="conn-item-card">'
+          + '<div class="conn-item-left">'
+          + avHtml
+          + '<div style="min-width:0">'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          + '  <b style="font-size:14px;color:var(--navy)">' + esc(targetName) + '</b>'
+          + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Gian hàng Làng') + '</span>'
+          + '  <small style="color:#64748b">' + esc(targetVil) + '</small>'
+          + '</div>'
+          + '<small style="color:#94a3b8;margin-top:4px;display:block">Gửi ngày: ' + esc(createdDate) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
+          + '</div>'
+          + '</div>'
+          + '<div class="conn-item-right">'
+          + statusPill
+          + (canCancel ? '<button class="btn small" data-action="cancel-connection" data-id="' + esc(c.id) + '" style="color:#64748b;margin-left:6px">' + icon('close', 12) + ' Hủy</button>' : '')
+          + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  } else {
+    if (accepted.length === 0) {
+      listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Chưa có kết nối nào được xác nhận thành công.</p></div>';
+    } else {
+      listHtml = accepted.map(c => {
+        const isPers = c.connectionType === 'personal';
+        const sName = c.sourceBooth?.authorName || c.sourceBooth?.villageName || c.requestedBy;
+        const tName = c.targetBooth?.authorName || c.targetBooth?.villageName || c.targetMemberId;
+        const sVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '—';
+        const tVil = c.targetBooth?.authorVillageName || c.targetBooth?.villageName || '—';
+        const dateStr = c.respondedAt ? new Date(c.respondedAt).toLocaleDateString('vi-VN') : '';
+
+        return '<div class="conn-item-card">'
+          + '<div class="conn-item-left">'
+          + '<div style="width:38px;height:38px;border-radius:50%;background:#dcfce7;color:#15803d;display:flex;align-items:center;justify-content:center;font-weight:700">' + icon('check', 18) + '</div>'
+          + '<div style="min-width:0">'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          + '  <b style="font-size:14px;color:var(--navy)">' + esc(sName) + ' (' + esc(sVil) + ') ↔ ' + esc(tName) + ' (' + esc(tVil) + ')</b>'
+          + '  <span class="tag ' + (isPers ? 'teal' : 'gold') + '" style="font-size:11px">' + (isPers ? 'Cá nhân' : 'Làng') + '</span>'
+          + '</div>'
+          + '<small style="color:#64748b;margin-top:4px;display:block">Xác nhận ngày: ' + esc(dateStr) + (c.connectionId ? ' · ' + esc(c.connectionId) : '') + '</small>'
+          + '</div>'
+          + '</div>'
+          + '<div class="conn-item-right">'
+          + '<span class="status-badge" style="background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">✓ Đã kết nối</span>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  }
+
+  return '<div class="connections-manager-wrap" style="margin-top:36px;border-top:1px solid #e2e8f0;padding-top:24px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">'
+    + '  <div>'
+    + '    <h2 style="font-size:18px;margin:0 0 4px;color:var(--navy)">Lời mời & Kết nối chính thức</h2>'
+    + '  </div>'
+    + '  <button class="btn small" data-action="refresh-connections" style="display:inline-flex;align-items:center;gap:5px">'
+    +      icon('refresh', 13) + ' Làm mới'
+    + '  </button>'
+    + '</div>'
+    + '<div class="conn-tabs">'
+    + '  <button class="conn-tab-btn ' + (connectionsActiveTab === 'inbox' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="inbox">'
+    + '    Cần xác nhận (' + inbox.length + ')'
+    + '  </button>'
+    + '  <button class="conn-tab-btn ' + (connectionsActiveTab === 'sent' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="sent">'
+    + '    Đã gửi (' + sent.length + ')'
+    + '  </button>'
+    + '  <button class="conn-tab-btn ' + (connectionsActiveTab === 'accepted' ? 'active' : '') + '" data-action="set-conn-tab" data-tab="accepted">'
+    + '    Đã kết nối (' + accepted.length + ')'
+    + '  </button>'
+    + '</div>'
+    + '<div style="margin-top:14px">'
+    +    listHtml
+    + '</div>'
+    + '</div>';
+}
+
+function showNotificationsModal() {
+  const inbox = Array.isArray(LIVE.inboxConnections) ? LIVE.inboxConnections : [];
+  let bodyHtml = '';
+  if (inbox.length === 0) {
+    bodyHtml = '<div class="empty" style="padding:28px 12px"><p style="margin:0;color:#64748b">Không có lời mời kết nối nào đang chờ xử lý.</p></div>';
+  } else {
+    bodyHtml = '<div style="max-height:420px;overflow-y:auto">'
+      + inbox.map(c => {
+        const isPers = c.connectionType === 'personal';
+        const senderName = c.sourceBooth?.authorName || c.requestedBy;
+        const senderVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '—';
+        const senderAv = c.sourceBooth?.authorAvatarUrl || null;
+        const avHtml = memberAvatarHtml(senderAv, senderName, 40);
+        const offer = c.sourceBooth?.offer || 'Chia sẻ kiến thức';
+
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:8px;gap:12px">'
+          + '<div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">'
+          +   avHtml
+          + '  <div style="min-width:0">'
+          + '    <b style="display:block;font-size:13.5px;color:var(--navy)">' + esc(senderName) + '</b>'
+          + '    <small style="color:#64748b">' + esc(senderVil) + ' · ' + (isPers ? 'Cá nhân' : 'Gian hàng Làng') + '</small>'
+          + '    <div style="font-size:12px;color:#334155;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>Chia sẻ:</b> ' + esc(offer) + '</div>'
+          + '  </div>'
+          + '</div>'
+          + '<div style="display:flex;gap:6px;flex-shrink:0">'
+          + '  <button class="btn btn-primary small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Accepted" style="background:#166534;border-color:#166534;padding:4px 10px">Đồng ý</button>'
+          + '  <button class="btn small" data-action="respond-connection" data-id="' + esc(c.id) + '" data-decision="Rejected" style="color:#b91c1c;padding:4px 10px">Từ chối</button>'
+          + '</div>'
+          + '</div>';
+      }).join('')
+      + '</div>';
+  }
+  openModal('Lời mời kết nối đang chờ (' + inbox.length + ')', bodyHtml, '<button class="btn" data-action="close-modal">Đóng</button>');
+}
+function getVillageNodeCoords(key, villageName, villageId, coords, nodeMap) {
+  if (key && coords[key]) return coords[key];
+  if (villageId && coords[villageId]) return coords[villageId];
+  if (villageName) {
+    const clean = villageName.replace(/^[^\w\s\u00C0-\u1EF9]+/u, '').trim().toLowerCase();
+    for (const [k, v] of Object.entries(coords)) {
+      const nodeName = nodeMap[k];
+      if (nodeName && nodeName.replace(/^[^\w\s\u00C0-\u1EF9]+/u, '').trim().toLowerCase() === clean) return v;
+    }
+  }
+  return null;
+}
+
+// ===== NETWORK (Bản đồ kết nối) =====
+function network() {
+  const isPersonal = liveNetworkMode === 'personal';
+
+  if (isPersonal) {
+    return networkPersonal();
+  }
+  return networkVillage();
+}
+
+// ===== NETWORK – Cá nhân (user hiện tại ở trung tâm) =====
+function networkPersonal() {
+  const me = LIVE.currentUser;
+  const W = 1020, H = 700;
+  const CX = W / 2, CY = H / 2;
+  const R_CENTER = 70;   // bán kính avatar trung tâm
+  const R_NODE   = 44;   // bán kính avatar xung quanh
+  const R_ORBIT  = 270;  // quỹ đạo các node xung quanh
+
+  // ---- Thu thập kết nối của user hiện tại ----
+  const allConns = Array.isArray(LIVE.connections) ? LIVE.connections : [];
+  const myMemberId = me?.memberId || '';
+
+  // Build danh sách các peer (người kết nối)
+  const peers = [];
+  allConns.forEach(c => {
+    if (c.connectionType !== 'personal') return;
+    const status = c.status; // 'Accepted' | 'Pending' | 'Rejected'
+    if (status === 'Rejected') return;
+    // Xác định phía bên kia
+    let peerId, peerName, peerVillage, peerAvatar;
+    if (c.requestedBy === myMemberId) {
+      peerId      = c.targetMemberId || c.targetBooth?.authorMemberId || '';
+      peerName    = c.targetName || c.targetBooth?.authorName || '';
+      peerVillage = c.targetVillageName || c.targetBooth?.authorVillageName || c.targetVillageId || '';
+      peerAvatar  = c.targetAvatarUrl || c.targetBooth?.authorAvatarUrl || '';
+    } else {
+      peerId      = c.requestedBy || c.sourceBooth?.authorMemberId || '';
+      peerName    = c.seekerName || c.sourceBooth?.authorName || '';
+      peerVillage = c.seekerVillageName || c.sourceBooth?.authorVillageName || c.sourceVillageId || '';
+      peerAvatar  = c.seekerAvatarUrl || c.sourceBooth?.authorAvatarUrl || '';
+    }
+
+    // Luôn tra cứu LIVE.members để lấy họ tên đầy đủ và làng chuẩn có emoji
+    const lm = (LIVE.members || []).find(m => m.id === peerId || m.memberId === peerId);
+    if (lm) {
+      if (!peerName || peerName === peerId || /^MEM-\d+$/i.test(peerName)) {
+        peerName = lm.name || peerId;
+      }
+      if (!peerVillage || /^VIL-\d+$/i.test(peerVillage)) {
+        peerVillage = lm.villageName || '';
+      }
+      if (!peerAvatar) {
+        peerAvatar = lm.avatarUrl || '';
+      }
+    }
+
+    // Nếu village vẫn là mã VIL-xxx thì tìm trong LIVE.villages
+    if (peerVillage && /^VIL-\d+$/i.test(peerVillage)) {
+      const lv = (LIVE.villages || []).find(v => v.id === peerVillage);
+      if (lv) peerVillage = lv.name;
+    }
+
+    if (!peerName) peerName = peerId || 'Thành viên';
+
+    peers.push({ peerId, peerName, peerVillage, peerAvatar, status, connId: c.id || c.connectionId });
+  });
+
+  // Nếu chưa đăng nhập hoặc chưa có kết nối
+  const togglePill = buildNetworkTogglePill(true);
+
+  if (!me) {
+    const svgEmpty = '<svg class="network-map-svg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">'
+      + buildPersonalDefs()
+      + buildPersonalOrbits(CX, CY, R_ORBIT)
+      + buildCenterBadgeGuest(CX, CY, R_CENTER)
+      + '</svg>';
+    return buildNetworkPage(togglePill, svgEmpty,
+      '<div class="network-bottom-caption">Đăng nhập để xem kết nối cá nhân của bạn</div>',
+      buildNetworkLegendPersonal(0, 0),
+      '<div class="empty">' + icon('users', 32) + '<b>Bạn chưa đăng nhập</b><p>Vui lòng đăng nhập để xem bản đồ kết nối cá nhân.</p><button class="btn btn-primary" data-action="re-login">Đăng nhập ngay</button></div>'
+    );
+  }
+
+  const accepted = peers.filter(p => p.status === 'Accepted');
+  const pending  = peers.filter(p => p.status === 'Pending');
+  const total    = peers.length;
+
+  // ---- SVG defs ----
+  const defs = buildPersonalDefs();
+
+  // ---- Orbits ----
+  const orbits = buildPersonalOrbits(CX, CY, R_ORBIT);
+
+  // ---- Node coords xung quanh ----
+  function peerCoord(i, n) {
+    const angle = -Math.PI / 2 + i * (2 * Math.PI / n);
+    return { x: CX + R_ORBIT * Math.cos(angle), y: CY + R_ORBIT * Math.sin(angle) };
+  }
+
+  // ---- Lines & Arrows kết nối giữa user trung tâm và các peer ----
+  let lines = '';
+  peers.forEach((p, i) => {
+    const q = peerCoord(i, Math.max(total, 1));
+    const isAccepted = p.status === 'Accepted';
+
+    const angle = Math.atan2(q.y - CY, q.x - CX);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    // Điểm bắt đầu từ rìa vòng tròn ngoài của avatar trung tâm
+    // Khi sin > 0.15 (hướng xuống dưới), tránh đè lên nhãn tên & làng của user trung tâm
+    const startDist = 82 + Math.max(0, sin) * 36;
+    const x1 = CX + startDist * cos;
+    const y1 = CY + startDist * sin;
+
+    // Điểm kết thúc: Ngay trước rìa ngoài của node peer.
+    // Khi sin < -0.15 (hướng lên trên), peer node có nhãn tên & làng nằm ở phía dưới avatar,
+    // nên dừng đường nối và mũi tên trước nhãn text để không bao giờ đè lên tên hay làng
+    const stopDist = 56 + Math.max(0, -sin) * 40;
+    const x2 = q.x - stopDist * cos;
+    const y2 = q.y - stopDist * sin;
+
+    if (isAccepted) {
+      // Đã kết nối: Đường nét liền Cyan sáng (#00e5ff), mũi tên kết nối 2 chiều
+      lines += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#00e5ff" stroke-width="2.5" stroke-opacity="0.9" stroke-linecap="round" marker-end="url(#arrowAcceptedEnd)" marker-start="url(#arrowAcceptedStart)"/>';
+    } else {
+      // Chờ duyệt: Đường nét đứt màu Vàng (#f2c657), mũi tên hướng tới người nhận
+      lines += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#f2c657" stroke-width="2" stroke-opacity="0.95" stroke-dasharray="7 5" stroke-linecap="round" marker-end="url(#arrowPendingEnd)"/>';
+
+      // Badge Chờ duyệt ở giữa đường nối
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      lines += '<g transform="translate(' + mx.toFixed(1) + ',' + my.toFixed(1) + ')">'
+        + '<rect x="-30" y="-11" width="60" height="22" rx="11" fill="#f2c657" opacity="0.95" filter="url(#nodeGlow2)"/>'
+        + '<text x="0" y="4.5" text-anchor="middle" fill="#0b192c" font-size="9.5" font-weight="700" font-family="inherit">Chờ duyệt</text>'
+        + '</g>';
+    }
+  });
+
+  // ---- Center node (user hiện tại) ----
+  const myName    = me.name || 'Bạn';
+  // Giữ nguyên villageName đầy đủ (có emoji), không strip và không hardcode emoji riêng
+  const myVillage = me.villageName || '';
+  const myAvatar  = me.avatarUrl || '';
+  const myInitial = myName[0]?.toUpperCase() || 'A';
+
+  const centerNode = '<g filter="url(#centerGlow2)">'
+    // Vòng sáng ngoài
+    + '<circle cx="' + CX + '" cy="' + CY + '" r="' + (R_CENTER + 20) + '" fill="none" stroke="#1a7de8" stroke-opacity="0.25" stroke-width="1.5"/>'
+    + '<circle cx="' + CX + '" cy="' + CY + '" r="' + (R_CENTER + 10) + '" fill="none" stroke="#1a7de8" stroke-opacity="0.4" stroke-width="1"/>'
+    // Avatar circle
+    + '<circle cx="' + CX + '" cy="' + CY + '" r="' + R_CENTER + '" fill="#0d2644" stroke="#1a7de8" stroke-width="3"/>'
+    + (myAvatar
+      ? '<image x="' + (CX - R_CENTER) + '" y="' + (CY - R_CENTER) + '" width="' + (R_CENTER * 2) + '" height="' + (R_CENTER * 2) + '" href="' + esc(myAvatar) + '" clip-path="circle(' + R_CENTER + 'px at ' + R_CENTER + 'px ' + R_CENTER + 'px)" preserveAspectRatio="xMidYMid slice"/>'
+      : '<text x="' + CX + '" y="' + (CY + 12) + '" text-anchor="middle" fill="#fff" font-size="32" font-weight="700">' + esc(myInitial) + '</text>')
+    // Tên
+    + '<text x="' + CX + '" y="' + (CY + R_CENTER + 22) + '" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="700" font-family="inherit">' + esc(myName) + '</text>'
+    + (myVillage ? '<text x="' + CX + '" y="' + (CY + R_CENTER + 37) + '" text-anchor="middle" fill="#4fc3f7" font-size="10.5" font-family="inherit">' + esc(myVillage) + '</text>' : '')
+    + '</g>';
+
+  // ---- Peer nodes ----
+  let peerNodes = '';
+  peers.forEach((p, i) => {
+    const q = peerCoord(i, Math.max(total, 1));
+    const isAccepted = p.status === 'Accepted';
+    const strokeColor = isAccepted ? '#1a7de8' : '#f2c657';
+    const strokeWidth = isAccepted ? '2.5' : '2';
+    const shortName = p.peerName.length > 14 ? p.peerName.slice(0, 13) + '…' : p.peerName;
+    // Giữ nguyên villageName đầy đủ (emoji + tên), cắt ngắn nếu quá dài
+    const shortVil  = (p.peerVillage || '').slice(0, 18);
+    const initial   = (p.peerName[0] || 'A').toUpperCase();
+
+    peerNodes += '<g data-action="open-peer-node" data-id="' + esc(p.peerId) + '" data-conn-id="' + esc(p.connId) + '" style="cursor:pointer" filter="url(#nodeGlow2)">'
+      + '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="' + (R_NODE + 6) + '" fill="none" stroke="' + strokeColor + '" stroke-opacity="0.3" stroke-width="1"/>'
+      + '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="' + R_NODE + '" fill="#0d2644" stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"/>'
+      + (p.peerAvatar
+        ? '<image x="' + (q.x - R_NODE).toFixed(1) + '" y="' + (q.y - R_NODE).toFixed(1) + '" width="' + (R_NODE * 2) + '" height="' + (R_NODE * 2) + '" href="' + esc(p.peerAvatar) + '" clip-path="circle(' + R_NODE + 'px at ' + R_NODE + 'px ' + R_NODE + 'px)" preserveAspectRatio="xMidYMid slice"/>'
+        : '<text x="' + q.x.toFixed(1) + '" y="' + (q.y + 6).toFixed(1) + '" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">' + esc(initial) + '</text>')
+      + '<text x="' + q.x.toFixed(1) + '" y="' + (q.y + R_NODE + 18) + '" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="700" font-family="inherit">' + esc(shortName) + '</text>'
+      + (shortVil ? '<text x="' + q.x.toFixed(1) + '" y="' + (q.y + R_NODE + 31) + '" text-anchor="middle" fill="#4fc3f7" font-size="9.5" font-family="inherit">' + esc(shortVil) + '</text>' : '')
+      + '</g>';
+  });
+
+  // ---- Trạng thái rỗng (chưa có kết nối) ----
+  let emptyOverlay = '';
+  if (total === 0) {
+    emptyOverlay = '<text x="' + CX + '" y="' + (CY - R_CENTER - 30) + '" text-anchor="middle" fill="#8aaecc" font-size="12" font-family="inherit">Chưa có kết nối nào</text>';
+  }
+
+  const svgEl = '<svg class="network-map-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Bản đồ kết nối cá nhân AXANH" style="width:100%;height:auto;display:block">'
+    + defs + orbits + lines + centerNode + peerNodes + emptyOverlay + '</svg>';
+
+  const caption = '<div class="network-bottom-caption">'
+    + (accepted.length > 0 ? accepted.length + ' kết nối đã được chấp nhận' : 'Chưa có kết nối nào được chấp nhận')
+    + (pending.length > 0 ? ' · ' + pending.length + ' đang chờ duyệt' : '')
+    + ' · Nhấn vào avatar để xem chi tiết'
+    + '</div>';
+
+  const legend = buildNetworkLegendPersonal(accepted.length, pending.length);
+
+  let connectedListHtml = '';
+  if (total === 0) {
+    connectedListHtml = '<div class="empty">' + icon('link', 32)
+      + '<b>Chưa có kết nối nào</b>'
+      + '<p>Vào Smart Matching để gửi lời mời kết nối tới các thành viên phù hợp.</p>'
+      + '<button class="btn btn-primary" data-action="nav" data-page="matches">' + icon('spark', 14) + ' Tìm người phù hợp</button>'
+      + '</div>';
+  } else {
+    connectedListHtml = '<div class="section-title" style="margin-top:20px"><h2>Danh sách kết nối của tôi (' + total + ')</h2><span>Chỉ hiển thị kết nối Accepted và Pending từ Lark Base</span></div>'
+      + '<div class="member-roster-grid">'
+      + peers.map(p => {
+          const avHtml = memberAvatarHtml(p.peerAvatar, p.peerName, 44);
+          const isAcc = p.status === 'Accepted';
+          return '<div class="member-roster-card" style="' + (isAcc ? '' : 'opacity:0.75') + '">'
+            + avHtml
+            + '<div style="flex:1;min-width:0">'
+            + '<b style="display:block;font-size:13.5px">' + esc(p.peerName) + '</b>'
+            + '<small style="color:#64748b">' + esc(p.peerVillage || '—') + '</small>'
+            + '</div>'
+            + '<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:' + (isAcc ? '#dcfce7' : '#fef3c7') + ';color:' + (isAcc ? '#15803d' : '#b45309') + '">'
+            + (isAcc ? '✓ Đã kết nối' : '⏳ Chờ duyệt')
+            + '</span>'
+            + '</div>';
+        }).join('')
+      + '</div>';
+  }
+
+  return buildNetworkPage(togglePill, svgEl, caption, legend, connectedListHtml);
+}
+
+// ===== NETWORK – Làng (dữ liệu Phiên chợ tri thức) =====
+function networkVillage() {
+  const W = 1020, H = 660;
+  const CX = 510, CY = 345, RX = 380, RY = 210;
+  const villageBooths = (LIVE.booths || []).filter(b => b.boothType === 'village');
+  const liveVillages = LIVE.villages || [];
+  const villageNodes = [...new Map(villageBooths.map(booth => {
+    const village = liveVillages.find(v =>
+      (booth.villageId && v.id === booth.villageId) ||
+      v.name === booth.villageName ||
+      v.name === booth.authorVillageName
+    );
+    return village ? [village.id, village] : null;
+  }).filter(Boolean))].map(([, village]) => village);
+
+  function nodeCoord(i, total) {
+    const angle = -Math.PI / 2 + i * (2 * Math.PI / total);
+    return { x: CX + RX * Math.cos(angle), y: CY + RY * Math.sin(angle) };
+  }
+
+  const coords = {}, nameMap = {};
+  villageNodes.forEach((v, i) => {
+    const pt = nodeCoord(i, villageNodes.length);
+    coords[v.id] = pt;
+    nameMap[v.id] = v.name;
+  });
+
+  const activeLines = [];
+  (LIVE.connections || []).forEach(c => {
+    if (c.connectionType !== 'village' || !['Accepted', 'Pending'].includes(c.status)) return;
+    const a = getVillageNodeCoords(
+      c.sourceVillageId || c.sourceBooth?.villageId,
+      c.sourceVillageName || c.sourceBooth?.villageName,
+      c.sourceVillageId || c.sourceBooth?.villageId,
+      coords,
+      nameMap
+    );
+    const b = getVillageNodeCoords(
+      c.targetVillageId || c.targetBooth?.villageId,
+      c.targetVillageName || c.targetBooth?.villageName,
+      c.targetVillageId || c.targetBooth?.villageId,
+      coords,
+      nameMap
+    );
+    if (a && b && (a.x !== b.x || a.y !== b.y)) activeLines.push({ c, a, b });
+  });
+
+  const defs = '<defs>'
+    + '<radialGradient id="netCenterGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#143c6d"/><stop offset="100%" stop-color="#071932"/></radialGradient>'
+    + '<linearGradient id="netline" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#f2c657"/><stop offset="1" stop-color="#59dccd"/></linearGradient>'
+    + '<filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
+    + '<filter id="centerGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
+    + '</defs>';
+
+  const orbits = '<ellipse cx="' + CX + '" cy="' + CY + '" rx="' + RX + '" ry="' + RY + '" fill="none" stroke="#ffffff14" stroke-width="1"/>'
+    + '<ellipse cx="' + CX + '" cy="' + CY + '" rx="' + (RX * 0.6) + '" ry="' + (RY * 0.6) + '" fill="none" stroke="#ffffff08" stroke-width="1"/>';
+
+  const badge = '<circle cx="' + CX + '" cy="' + CY + '" r="95" fill="none" stroke="#3a7bd5" stroke-opacity=".18" stroke-width="1"/>'
+    + '<circle cx="' + CX + '" cy="' + CY + '" r="83" fill="url(#netCenterGrad)" stroke="#4a8fd4" stroke-opacity=".35" stroke-width="1.5" filter="url(#centerGlow)"/>'
+    + '<text x="' + CX + '" y="' + (CY - 14) + '" text-anchor="middle" fill="#ffffff" font-size="22" font-weight="900" letter-spacing="3" font-family="inherit">AXANH</text>'
+    + '<text x="' + CX + '" y="' + (CY + 8) + '" text-anchor="middle" fill="#f2bd43" font-size="12" font-weight="700" letter-spacing="2" font-family="inherit">KNOWLEDGE</text>'
+    + '<text x="' + CX + '" y="' + (CY + 26) + '" text-anchor="middle" fill="#8aaecc" font-size="11" letter-spacing="1.5" font-family="inherit">EXCHANGE</text>';
+
+  const lines = activeLines.map(({ c, a, b }) => {
+    const mx = (a.x + b.x) / 2 + (CX - (a.x + b.x) / 2) * 0.4;
+    const my = (a.y + b.y) / 2 + (CY - (a.y + b.y) / 2) * 0.4;
+    return '<path d="M ' + a.x.toFixed(1) + ' ' + a.y.toFixed(1) + ' Q ' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' ' + b.x.toFixed(1) + ' ' + b.y.toFixed(1) + '" fill="none" stroke="url(#netline)" stroke-width="' + (c.status === 'Accepted' ? '3.5' : '2') + '"' + (c.status === 'Pending' ? ' stroke-dasharray="6 5"' : '') + ' opacity=".75" stroke-linecap="round"/>';
+  }).join('');
+
+  const nodes = villageNodes.map((v, i) => {
+    const q = nodeCoord(i, villageNodes.length);
+    const iconSrc = v.iconUrl || '';
+    const shortName = esc((v.name || '').replace(/^\S+\s*/, ''));
+    return '<g filter="url(#nodeGlow)">'
+      + '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="38" fill="#f8f4e8" stroke="#d4aa50" stroke-width="2.5"/>'
+      + (iconSrc ? '<image x="' + (q.x - 32).toFixed(1) + '" y="' + (q.y - 32).toFixed(1) + '" width="64" height="64" href="' + esc(iconSrc) + '" clip-path="circle(32px at 32px 32px)" preserveAspectRatio="xMidYMid slice"/>'
+        : '<text x="' + q.x.toFixed(1) + '" y="' + (q.y + 6).toFixed(1) + '" text-anchor="middle" fill="#1a3a6e" font-size="18" font-weight="900">AX</text>')
+      + '<text x="' + q.x.toFixed(1) + '" y="' + (q.y + 56).toFixed(1) + '" text-anchor="middle" fill="#c8ddf5" font-size="12" font-weight="700" font-family="inherit">' + shortName + '</text>'
+      + '</g>';
+  }).join('');
+  const emptyOverlay = villageNodes.length === 0
+    ? '<text x="' + CX + '" y="' + (CY + 125) + '" text-anchor="middle" fill="#8aaecc" font-size="12" font-family="inherit">'
+      + (LIVE.boothsLoading ? 'Đang tải gian hàng Làng…' : 'Chưa có gian hàng Làng từ Phiên chợ tri thức')
+      + '</text>'
+    : '';
+
+  const svgEl = '<svg class="network-map-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Bản đồ kết nối Làng–Làng AXANH" style="width:100%;height:auto;display:block">'
+    + defs + orbits + lines + badge + nodes + emptyOverlay + '</svg>';
+
+  const caption = '<div class="network-bottom-caption">Đường nối lấy từ kết nối Làng–Làng trên Lark Base</div>';
+  const legend = '<div class="network-legend">'
+    + '<span><i class="dot" style="background:#d4aa50"></i>' + villageNodes.length + ' Làng có gian hàng</span>'
+    + '<span><i class="dot" style="background:#59dccd"></i>Đã kết nối</span>'
+    + '<span><i class="dot" style="background:#f2c657"></i>Chờ duyệt</span>'
+    + '</div>';
+
+  const connectionSummary = '<div class="section-title" style="margin-top:24px"><h2>' + activeLines.length + ' kết nối Làng–Làng</h2><span>Dữ liệu kết nối từ Lark Base</span></div>'
+    + (activeLines.length
+      ? '<div class="grid2">' + activeLines.map(({ c }) => '<div class="panel"><div class="row-flex"><b>' + esc(c.sourceVillageName || c.sourceBooth?.villageName || 'Làng') + ' ↔ ' + esc(c.targetVillageName || c.targetBooth?.villageName || 'Làng') + '</b><span class="status">' + (c.status === 'Accepted' ? 'Đã kết nối' : 'Chờ duyệt') + '</span></div><p>' + esc(c.topic || c.sourceBooth?.offer || c.sourceBooth?.need || 'Trao đổi tri thức') + '</p></div>').join('') + '</div>'
+      : '<div class="empty">' + icon('network', 34) + '<b>Chưa có kết nối Làng–Làng</b><p>Khi có lời mời Làng–Làng từ gian hàng trên Phiên chợ tri thức, kết nối sẽ hiển thị tại đây.</p></div>');
+  return buildNetworkPage(buildNetworkTogglePill(false), svgEl, caption, legend, connectionSummary);
+}
+
+function openVillageConnectionsModal(boothId) {
+  const booth = LIVE.booths.find(b => b.boothId === boothId || b.recordId === boothId);
+  if (!booth) {
+    toast('Không tìm thấy gian hàng Làng để tải kết nối.', 'warn');
+    return;
+  }
+  const connections = getVillageBoothConnections(booth);
+  const body = connections.length
+    ? '<div style="display:flex;flex-direction:column;gap:8px">'
+      + connections.map(c => {
+          const connected = c.status === 'Accepted';
+          const date = c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : '—';
+          return '<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #eef2f7">'
+            + villageLogoHtml(c.iconUrl, c.name, 40)
+            + '<div style="flex:1;min-width:0"><b style="display:block;font-size:13px">' + esc(c.name) + '</b><small style="color:#64748b">Đề xuất: ' + esc(date) + '</small></div>'
+            + '<span style="font-size:10px;font-weight:700;padding:5px 8px;border-radius:20px;white-space:nowrap;background:' + (connected ? '#dcfce7;color:#15803d' : '#fef3c7;color:#b45309') + '">'
+            + (connected ? '● Đã kết nối' : '◷ Chờ xác nhận')
+            + '</span></div>';
+        }).join('')
+      + '</div>'
+    : '<div class="empty"><b>Chưa có Làng kết nối</b><p>Các kết nối Làng–Làng của gian hàng này sẽ hiển thị tại đây.</p></div>';
+  openModal(
+    'Làng tham gia phiên này (' + connections.length + ')',
+    body,
+    '<button class="btn" data-action="close-modal">Đóng</button>'
+  );
+}
+
+// ===== NETWORK – Helper functions =====
+function buildNetworkTogglePill(isPersonal) {
+  // SVG icons inline, kích thước cứng 16x16, không phụ thuộc hàm icon()
+  const svgNetwork = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;overflow:hidden" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="M6 6l4 4m4 4 4 4M18 6l-4 4M10 14l-4 4"/></svg>';
+  const svgUsers   = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;overflow:hidden" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+  return '<div class="network-top-bar">'
+    + '<div class="network-toggle-pill">'
+    + '<button class="network-toggle-btn' + (!isPersonal ? ' active' : '') + '" data-action="set-network-mode" data-mode="village" type="button">'
+    + svgNetwork
+    + '<span class="toggle-label">Bản đồ Làng–Làng</span>'
+    + '</button>'
+    + '<button class="network-toggle-btn' + (isPersonal ? ' active' : '') + '" data-action="set-network-mode" data-mode="personal" type="button">'
+    + svgUsers
+    + '<span class="toggle-label">Cá nhân–Cá nhân</span>'
+    + '</button>'
+    + '</div>'
+    + '</div>';
+}
+
+function buildPersonalDefs() {
+  return '<defs>'
+    + '<radialGradient id="personalCenterGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#1a4a8a"/><stop offset="100%" stop-color="#071932"/></radialGradient>'
+    + '<filter id="centerGlow2" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="10" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
+    + '<filter id="nodeGlow2" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
+    // Mũi tên Accepted (Cyan #00e5ff) hướng tới node
+    + '<marker id="arrowAcceptedEnd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">'
+    + '<path d="M 0 1.5 L 9 5 L 0 8.5 L 2.5 5 z" fill="#00e5ff"/>'
+    + '</marker>'
+    // Mũi tên Accepted (Cyan #00e5ff) hướng về phía trung tâm (kết nối 2 chiều)
+    + '<marker id="arrowAcceptedStart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto">'
+    + '<path d="M 9 1.5 L 0 5 L 9 8.5 L 6.5 5 z" fill="#00e5ff"/>'
+    + '</marker>'
+    // Mũi tên Pending (Gold #f2c657) hướng tới người nhận
+    + '<marker id="arrowPendingEnd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">'
+    + '<path d="M 0 1.5 L 9 5 L 0 8.5 L 2.5 5 z" fill="#f2c657"/>'
+    + '</marker>'
+    + '</defs>';
+}
+
+function buildPersonalOrbits(cx, cy, r) {
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="rgba(26,125,232,0.12)" stroke-width="1"/>'
+    + '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.6) + '" fill="none" stroke="rgba(26,125,232,0.07)" stroke-width="1"/>'
+    + '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.3) + '" fill="none" stroke="rgba(26,125,232,0.07)" stroke-width="1"/>';
+}
+
+function buildCenterBadgeGuest(cx, cy, r) {
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r + 18) + '" fill="none" stroke="#1a7de8" stroke-opacity="0.2" stroke-width="1.5"/>'
+    + '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="#0d2644" stroke="#1a7de8" stroke-width="2.5"/>'
+    + '<text x="' + cx + '" y="' + (cy + 10) + '" text-anchor="middle" fill="#8aaecc" font-size="22">👤</text>'
+    + '<text x="' + cx + '" y="' + (cy + r + 22) + '" text-anchor="middle" fill="#8aaecc" font-size="11" font-family="inherit">Chưa đăng nhập</text>';
+}
+
+function buildNetworkLegendPersonal(acceptedCount, pendingCount) {
+  return '<div class="network-legend">'
+    + '<span><i class="dot" style="background:#1a7de8"></i>' + acceptedCount + ' Đã kết nối</span>'
+    + '<span><i class="dot" style="background:#f2c657"></i>' + pendingCount + ' Chờ duyệt</span>'
+    + '</div>';
+}
+
+function buildNetworkPage(togglePill, svgEl, caption, legend, bottomHtml) {
+  return pageHeader('Bản đồ kết nối AXANH', '', '<button class="btn btn-primary" data-action="nav" data-page="matches">' + icon('link') + ' Tạo kết nối</button>')
+    + '<div class="network-wrap">'
+    + togglePill
+    + svgEl
+    + caption
+    + legend
+    + '</div>'
+    + bottomHtml;
+}
+
+function formatLearningDateTime(timestamp) {
+  if (!Number.isFinite(timestamp)) return 'Chưa có thời gian';
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(timestamp));
+}
+
+function vietnamDateParts() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return values.year + '-' + values.month + '-' + values.day;
+}
+
+function learningSessionCard(session) {
+  const permission = session.permissions || {};
+  const participantsHtml = learningParticipantsHtml(session.participantDetails || session.participants || []);
+  const connectionLabelHtml = session.connectionType === 'village'
+    ? '<small class="muted">' + esc(session.connectionLabel) + '</small>'
+    : '';
+  const statusLabel = session.status === 'Proposed' ? 'Chờ xác nhận'
+    : session.status === 'Confirmed' ? 'Đã xác nhận'
+      : session.status === 'Completed' ? 'Đã hoàn thành'
+        : 'Đã hủy / từ chối';
+  const place = session.format === 'Online' && validLink(session.locationOrLink)
+    ? '<a href="' + esc(session.locationOrLink) + '" target="_blank" rel="noopener noreferrer">Mở link họp</a>'
+    : esc(session.locationOrLink || 'Chưa có địa điểm / link');
+  let actions = '';
+  if (permission.canRespond) {
+    actions += '<button class="btn btn-primary small" data-action="learning-respond" data-id="' + esc(session.id) + '" data-decision="accept">Xác nhận</button>'
+      + '<button class="btn small" data-action="learning-respond" data-id="' + esc(session.id) + '" data-decision="reject">Từ chối</button>';
+  }
+  if (permission.canCancel) {
+    actions += '<button class="btn small" data-action="learning-respond" data-id="' + esc(session.id) + '" data-decision="cancel">Hủy đề xuất</button>';
+  }
+  if (permission.canComplete) {
+    actions += '<button class="btn btn-primary small" data-action="learning-complete" data-id="' + esc(session.id) + '">Xác nhận đã hoàn thành</button>';
+  }
+  if (permission.canReport) {
+    actions += '<button class="btn ' + (session.hasReported ? '' : 'btn-primary') + ' small" data-action="learning-results" data-id="' + esc(session.id) + '">'
+      + (session.hasReported ? 'Xem kết quả' : 'Báo cáo kết quả') + '</button>';
+  }
+  return '<article class="panel" style="margin-bottom:10px">'
+    + '<div class="row-flex" style="align-items:flex-start;gap:12px"><div style="min-width:0;flex:1">'
+    + '<h3 style="margin:0 0 6px">' + esc(session.title) + '</h3>'
+    + connectionLabelHtml
+    + (participantsHtml ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">' + participantsHtml + '</div>' : '')
+    + '<p style="margin:7px 0;color:#64748b">' + esc(formatLearningDateTime(session.startAt)) + ' – ' + esc(formatLearningDateTime(session.endAt)) + '</p>'
+    + '<p style="margin:0;color:#64748b">' + esc(session.format || 'Chưa chọn hình thức') + ' · ' + place + '</p>'
+    + '</div><span class="status">' + statusLabel + '</span></div>'
+    + (session.status === 'Confirmed' && session.endAt <= Date.now() ? '<p class="muted" style="margin:10px 0 0">Đã qua thời gian dự kiến; buổi học chưa được đánh dấu hoàn thành.</p>' : '')
+    + (session.hasReported ? '<p class="tag teal" style="display:inline-block;margin:10px 0 0">Bạn đã báo cáo kết quả</p>' : '')
+    + (actions ? '<div class="btnbar" style="margin-top:12px">' + actions + '</div>' : '')
+    + '</article>';
+}
+
+function learningParticipantsHtml(participants, showIds = false) {
+  const memberById = new Map(LIVE.members.map((member) => [member.id, member]));
+  const rendered = participants.map((participant) => typeof participant === 'string'
+    ? { name: participant }
+    : participant);
+  return rendered.map((participant, index) => {
+    const member = participant.memberId ? memberById.get(participant.memberId) : null;
+    const name = member?.name || participant.name || participant.memberId || 'Thành viên';
+    const avatarUrl = member?.avatarUrl || participant.avatarUrl;
+    const details = showIds && participant.memberId
+      ? '<small style="display:block;color:#64748b">Member_ID: ' + esc(participant.memberId) + '</small>'
+      : '';
+    return (index ? '<span aria-hidden="true" style="color:#94a3b8">↔</span>' : '')
+      + '<span style="display:inline-flex;align-items:center;gap:7px">'
+      + memberAvatarHtml(avatarUrl, name, 36)
+      + '<span><b>' + esc(name) + '</b>' + details + '</span>'
+      + '</span>';
+  }).join('');
+}
+
+function learningGroup(title, sessions) {
+  if (!sessions.length) return '';
+  return '<section style="margin-top:22px"><div class="section-title"><h2>' + title + '</h2><span>' + sessions.length + '</span></div>'
+    + sessions.map(learningSessionCard).join('') + '</section>';
+}
+
+function schedule() {
+  const learning = LIVE.learning;
+  const header = pageHeader('Lịch cùng học', '',
+    '<button class="btn btn-primary" data-action="learning-create">' + icon('plus') + ' Đặt lịch học</button>');
+  if (learning.loading) return header + '<div class="status-banner">Đang tải lịch học từ Lark Base…</div>';
+  if (learning.error) {
+    return header + '<div class="status-banner">' + icon('info') + ' ' + esc(learning.error)
+      + ' <button class="btn small" data-action="learning-refresh">Thử lại</button></div>';
+  }
+  const now = Date.now();
+  const sessions = learning.sessions || [];
+  const upcoming = sessions.filter(item => item.status === 'Confirmed' && item.endAt > now);
+  const pending = sessions.filter(item => item.status === 'Proposed');
+  const elapsed = sessions.filter(item => item.status === 'Confirmed' && item.endAt <= now);
+  const history = sessions.filter(item => ['Completed', 'Cancelled'].includes(item.status));
+  const content = learningGroup('Lịch sắp tới', upcoming)
+    + learningGroup('Chờ xác nhận', pending)
+    + learningGroup('Đã qua thời gian dự kiến', elapsed)
+    + learningGroup('Lịch sử học tập', history);
+  return header
+    + (!learning.availableConnections.length
+      ? '<div class="status-banner" style="margin-top:14px">Chưa có kết nối Lark Base ở trạng thái Accepted mà bạn có quyền tham gia.</div>'
+      : '')
+    + (content || '<div class="empty">' + icon('calendar', 38) + '<b>Chưa có buổi học</b><p>Đặt lịch từ một kết nối đã được chấp nhận.</p></div>')
+    + '<p class="muted" style="margin-top:16px">Lịch đã qua giờ kết thúc không tự chuyển sang hoàn thành. Một người tham gia cần xác nhận buổi học đã diễn ra.</p>';
+}
+
+function openLearningScheduleModal() {
+  const connections = LIVE.learning.availableConnections || [];
+  const connectionOptions = connections.map(connection => '<option value="' + esc(connection.id) + '">' + esc(connection.label) + '</option>').join('');
+  const formats = (LIVE.learning.reportOptions?.formats || ['Online', 'Trực tiếp'])
+    .map(format => '<option value="' + esc(format) + '">' + esc(format) + '</option>').join('');
+  const today = vietnamDateParts();
+  openModal('Đặt lịch học', '<form id="learningScheduleForm" class="settings-form">'
+    + (connections.length
+      ? '<div class="field"><label>Kết nối đã chấp nhận</label><select name="connectionId" required><option value="">Chọn kết nối</option>' + connectionOptions + '</select></div>'
+      : '<div class="empty"><b>Chưa có kết nối phù hợp</b><p>Chỉ có thể đặt lịch từ kết nối Làng hoặc Cá nhân đã được chấp nhận và bạn là người tham gia được ủy quyền.</p></div>')
+    + '<div class="field"><label>Tiêu đề buổi học</label><input name="title" maxlength="200" required></div>'
+    + '<div class="field-grid"><div class="field"><label>Ngày học (giờ Việt Nam)</label><input type="date" name="date" min="' + today + '" value="' + today + '" required></div>'
+    + '<div class="field"><label>Hình thức</label><select name="format" required>' + formats + '</select></div></div>'
+    + '<div class="field-grid"><div class="field"><label>Giờ bắt đầu</label><input type="time" name="startTime" required></div>'
+    + '<div class="field"><label>Giờ kết thúc</label><input type="time" name="endTime" required></div></div>'
+    + '<div class="field"><label>Link họp hoặc địa điểm (không bắt buộc)</label><input name="locationOrLink" maxlength="1000" placeholder="Có thể để trống"></div>'
+    + '<button class="btn btn-primary" type="submit"' + (connections.length ? '' : ' disabled') + '>' + icon('calendar') + ' Gửi đề xuất lịch</button>'
+    + '</form>');
+}
+
+function openLearningReportForm(session) {
+  const appliedOptions = (LIVE.learning.reportOptions?.applied || [])
+    .map(option => '<option value="' + esc(option) + '">' + esc(option) + '</option>').join('');
+  const participantsHtml = learningParticipantsHtml(
+    session.participantDetails || session.participants || [],
+    true,
+  );
+  openModal('Form 02 · Báo cáo buổi học', '<div class="panel" style="margin-bottom:14px">'
+    + '<b>' + esc(session.title) + '</b><p>' + esc(formatLearningDateTime(session.startAt)) + ' · ' + esc(session.connectionLabel) + '</p>'
+    + '<small>Người báo cáo: ' + esc(LIVE.currentUser?.name || 'Bạn') + '</small>'
+    + (participantsHtml ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px"><b>Cùng học:</b>' + participantsHtml + '</div>' : '')
+    + '</div>'
+    + '<form id="learningReportForm" class="settings-form" data-session-id="' + esc(session.id) + '">'
+    + '<div class="field"><label>Điều em đã học được</label><textarea name="learned" required maxlength="5000"></textarea></div>'
+    + '<div class="field-grid"><div class="field"><label>Đã thử áp dụng?</label><select name="applied" required>' + appliedOptions + '</select></div>'
+    + '<div class="field"><label>Mức độ hữu ích</label><select name="rating" required><option value="5">5 – Rất hữu ích</option><option value="4">4 – Hữu ích</option><option value="3">3 – Có ích phần nào</option><option value="2">2 – Cần cải thiện</option><option value="1">1 – Chưa hữu ích</option></select></div></div>'
+    + '<div class="field"><label>Kết quả sau khi áp dụng (tùy chọn)</label><textarea name="outcome" maxlength="5000"></textarea></div>'
+    + '<div class="field"><label>Tài sản tri thức có thể chia sẻ lại (tùy chọn)</label><input name="asset" maxlength="2000"></div>'
+    + '<div class="field"><label>Link / minh chứng (tùy chọn)</label><input name="evidence" type="url" maxlength="2000"></div>'
+    + '<label class="checkline"><input type="checkbox" name="share">Đồng ý chia sẻ bài học này ở chế độ nội bộ khi tổ chức có cơ chế phê duyệt.</label>'
+    + '<button class="btn btn-primary" type="submit">' + icon('check') + ' Gửi Form 02</button></form>');
+}
+
+async function openLearningResults(session) {
+  openModal('Kết quả buổi học', '<div class="status-banner">Đang tải kết quả…</div>');
+  try {
+    const reports = await window.AXANH_LIVE_API.getLearningResults(session.id);
+    const root = document.querySelector('#modal');
+    const body = reports.length
+      ? '<div style="display:flex;flex-direction:column;gap:12px">' + reports.map(report =>
+        '<article class="panel"><div class="row-flex"><b>' + esc(report.reporterName) + (report.own ? ' · Bạn' : '') + '</b><span>' + (report.share ? 'Đã đồng ý chia sẻ' : 'Riêng tư') + '</span></div>'
+        + '<p><b>Điều đã học:</b> ' + esc(report.learned) + '</p><p><b>Đã thử áp dụng:</b> ' + esc(report.applied) + '</p>'
+        + '<p><b>Mức độ hữu ích:</b> ' + esc(report.rating ?? '—') + '/5</p>'
+        + (report.outcome ? '<p><b>Kết quả:</b> ' + esc(report.outcome) + '</p>' : '')
+        + (report.asset ? '<p><b>Tài sản có thể chia sẻ:</b> ' + esc(report.asset) + '</p>' : '')
+        + (report.evidence && validLink(report.evidence) ? '<p><a href="' + esc(report.evidence) + '" target="_blank" rel="noopener noreferrer">Mở link / minh chứng</a></p>' : '')
+        + '</article>').join('') + '</div>'
+      : '<div class="empty"><b>Chưa có kết quả bạn được phép xem</b><p>Báo cáo của người khác chỉ hiển thị khi họ đồng ý chia sẻ.</p></div>';
+    if (root?.classList.contains('open')) root.querySelector('.modal-body').innerHTML = body;
+    if (session.permissions?.canReport && !session.hasReported) {
+      const footer = root?.querySelector('.modal-foot');
+      if (footer) footer.innerHTML = '<button class="btn" data-action="close-modal">Đóng</button><button class="btn btn-primary" data-action="learning-report" data-id="' + esc(session.id) + '">Báo cáo kết quả</button>';
+      else if (root) root.querySelector('.modal').insertAdjacentHTML('beforeend', '<div class="modal-foot"><button class="btn" data-action="close-modal">Đóng</button><button class="btn btn-primary" data-action="learning-report" data-id="' + esc(session.id) + '">Báo cáo kết quả</button></div>');
+    }
+  } catch (err) {
+    const root = document.querySelector('#modal');
+    if (root?.classList.contains('open')) root.querySelector('.modal-body').innerHTML = '<div class="status-banner">' + esc(err.message || 'Không thể tải kết quả.') + '</div>';
+  }
+}
+function knowledgeTypeLabel(type) {
+  return type === 'personal' ? 'Cá nhân' : type === 'village' ? 'Làng' : 'Chưa phân loại';
+}
+
+function knowledgeDate(timestamp) {
+  if (!Number.isFinite(timestamp)) return 'Chưa có ngày';
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    dateStyle: 'medium',
+  }).format(new Date(timestamp));
+}
+
+function filteredKnowledgeItems() {
+  const search = librarySearch.trim().toLocaleLowerCase('vi');
+  return (LIVE.knowledge.items || []).filter((item) => {
+    if (libraryConnectionFilter !== 'all' && item.connectionType !== libraryConnectionFilter) return false;
+    if (libraryAppliedFilter === 'applied' && !item.isApplied) return false;
+    if (libraryAppliedFilter === 'not-applied' && item.isApplied) return false;
+    if (!search) return true;
+    return [item.title, item.topic, item.learned, item.authorName]
+      .some((value) => String(value || '').toLocaleLowerCase('vi').includes(search));
+  });
+}
+
+function knowledgeCard(item) {
+  return '<article class="knowledge-card">'
+    + '<div class="row-flex"><span class="knowledge-ico">' + icon('book', 24) + '</span><span class="tag teal">' + esc(knowledgeTypeLabel(item.connectionType)) + '</span></div>'
+    + '<h3>' + esc(item.title) + '</h3>'
+    + '<p><b>Chủ đề / Nội dung học:</b> ' + esc(item.topic) + '</p>'
+    + '<div class="lightbar"><span>' + esc(knowledgeDate(item.startAt)) + '</span><span class="tag">' + esc(item.isApplied ? 'Đã áp dụng' : 'Chưa áp dụng') + '</span></div>'
+    + (item.authorName ? '<p>Người chia sẻ: ' + esc(item.authorName) + '</p>' : '')
+    + '<button class="btn small" data-action="knowledge-detail" data-id="' + esc(item.id) + '">Xem chi tiết ' + icon('arrow', 15) + '</button>'
+    + '</article>';
+}
+
+function renderKnowledgeResults() {
+  const allItems = LIVE.knowledge.items || [];
+  if (!allItems.length) {
+    return '<div class="empty">' + icon('book', 38) + '<b>Chưa có bài học nào được chia sẻ.</b><p>Những bài học được đồng ý chia sẻ sau khi hoàn thành buổi học sẽ xuất hiện tại đây.</p></div>';
+  }
+  const items = filteredKnowledgeItems();
+  return items.length
+    ? '<div class="grid3">' + items.map(knowledgeCard).join('') + '</div>'
+    : '<div class="empty"><b>Không tìm thấy bài học phù hợp.</b><p>Thử thay đổi từ khóa hoặc bộ lọc.</p></div>';
+}
+
+function library() {
+  const header = pageHeader(
+    'Kho tri thức',
+    '',
+    '<button class="btn" data-action="knowledge-refresh">' + icon('refresh') + ' Làm mới</button>',
+  );
+  if (LIVE.knowledge.loading) return header + '<div class="status-banner">Đang tải bài học đã được chia sẻ từ Form 02…</div>';
+  if (LIVE.knowledge.error) {
+    return header + '<div class="status-banner">' + icon('info') + ' ' + esc(LIVE.knowledge.error)
+      + ' <button class="btn small" data-action="knowledge-refresh">Thử lại</button></div>';
+  }
+
+  return header
+    + '<div class="knowledge-controls">'
+    + '<label class="field-search">' + icon('search', 18) + '<input id="knowledgeSearch" type="search" value="' + esc(librarySearch) + '" placeholder="Tìm tiêu đề, nội dung, bài học hoặc người chia sẻ" aria-label="Tìm trong Kho tri thức"></label>'
+    + '<label class="select"><span>Loại kết nối</span><select id="knowledgeConnectionFilter"><option value="all"' + (libraryConnectionFilter === 'all' ? ' selected' : '') + '>Tất cả bài học</option><option value="personal"' + (libraryConnectionFilter === 'personal' ? ' selected' : '') + '>Cá nhân</option><option value="village"' + (libraryConnectionFilter === 'village' ? ' selected' : '') + '>Làng</option></select></label>'
+    + '<label class="select"><span>Áp dụng</span><select id="knowledgeAppliedFilter"><option value="all"' + (libraryAppliedFilter === 'all' ? ' selected' : '') + '>Tất cả</option><option value="applied"' + (libraryAppliedFilter === 'applied' ? ' selected' : '') + '>Đã áp dụng</option><option value="not-applied"' + (libraryAppliedFilter === 'not-applied' ? ' selected' : '') + '>Chưa áp dụng</option></select></label>'
+    + '</div>'
+    + '<div id="knowledgeResults" style="margin-top:16px">' + renderKnowledgeResults() + '</div>';
+}
+
+function refreshKnowledgeResults() {
+  const root = document.querySelector('#knowledgeResults');
+  if (root) root.innerHTML = renderKnowledgeResults();
+}
+
+async function loadKnowledge() {
+  const generation = ++knowledgeLoadGeneration;
+  const api = window.AXANH_LIVE_API;
+  if (!api?.getKnowledge) {
+    LIVE.knowledge.error = 'Chưa kết nối API Kho tri thức.';
+    LIVE.knowledge.items = [];
+    if (currentPage === 'library') render();
+    return;
+  }
+  LIVE.knowledge.loading = true;
+  LIVE.knowledge.error = '';
+  if (currentPage === 'library') render();
+  try {
+    const data = await api.getKnowledge();
+    if (generation !== knowledgeLoadGeneration) return;
+    LIVE.knowledge.items = Array.isArray(data.items) ? data.items : [];
+    LIVE.knowledge.diagnostics = data.diagnostics || {};
+  } catch (error) {
+    if (generation !== knowledgeLoadGeneration) return;
+    LIVE.knowledge.error = error.message || 'Không thể tải Kho tri thức.';
+    LIVE.knowledge.items = [];
+    LIVE.knowledge.diagnostics = {};
+  } finally {
+    if (generation === knowledgeLoadGeneration) {
+      LIVE.knowledge.loading = false;
+      if (currentPage === 'library') render();
+    }
+  }
+}
+
+async function loadHonors(forceFresh = false) {
+  const generation = ++honorsLoadGeneration;
+  const api = window.AXANH_LIVE_API;
+  if (!api?.getHonors) {
+    LIVE.honors = { loading: false, error: 'Chưa kết nối API Vinh danh.', data: null };
+    if (currentPage === 'awards') render();
+    return;
+  }
+  LIVE.honors.loading = true;
+  LIVE.honors.error = '';
+  if (currentPage === 'awards') render();
+  try {
+    const data = await api.getHonors(forceFresh);
+    if (generation !== honorsLoadGeneration) return;
+    LIVE.honors.data = data;
+  } catch (error) {
+    if (generation !== honorsLoadGeneration) return;
+    LIVE.honors.error = error.message || 'Không thể tải dữ liệu Vinh danh.';
+    LIVE.honors.data = null;
+  } finally {
+    if (generation === honorsLoadGeneration) {
+      LIVE.honors.loading = false;
+      if (currentPage === 'awards') render();
+    }
+  }
+}
+
+async function openKnowledgeDetail(id) {
+  openModal('Chi tiết bài học', '<div class="status-banner knowledge-detail-loading">Đang kiểm tra quyền chia sẻ và tải nội dung…</div>');
+  try {
+    const item = await window.AXANH_LIVE_API.getKnowledgeDetail(id);
+    const root = document.querySelector('#modal');
+    const loading = root?.querySelector('.knowledge-detail-loading');
+    if (!loading) return;
+    const evidence = item.evidenceUrl && validLink(item.evidenceUrl)
+      ? '<p><a href="' + esc(item.evidenceUrl) + '" target="_blank" rel="noopener noreferrer">Mở tài liệu / minh chứng</a></p>'
+      : '';
+    loading.outerHTML = '<div class="knowledge-detail">'
+      + '<p class="muted">' + esc(knowledgeDate(item.startAt)) + ' · ' + esc(knowledgeTypeLabel(item.connectionType)) + '</p>'
+      + (item.authorName ? '<p><b>Người chia sẻ:</b> ' + esc(item.authorName) + '</p>' : '')
+      + '<section><h3>Chủ đề / Nội dung học</h3><p>' + esc(item.topic) + '</p></section>'
+      + '<section><h3>Điều đã học được</h3><p>' + esc(item.learned || '—') + '</p></section>'
+      + '<section><h3>Đã thử áp dụng?</h3><p>' + esc(item.applied || '—') + '</p></section>'
+      + '<section><h3>Kết quả sau khi áp dụng</h3><p>' + esc(item.outcome || '—') + '</p></section>'
+      + (evidence ? '<section><h3>Tài liệu / Minh chứng</h3>' + evidence + '</section>' : '')
+      + '</div>';
+  } catch (error) {
+    const root = document.querySelector('#modal');
+    const loading = root?.querySelector('.knowledge-detail-loading');
+    if (loading) loading.outerHTML = '<div class="status-banner">' + esc(error.message || 'Không thể tải chi tiết bài học.') + '</div>';
+  }
+}
+function honorMetricsMarkup(item) {
+  return '<div class="kv"><span>Kết nối được chấp nhận</span><b>' + esc(item.acceptedConnections || 0) + '</b></div>'
+    + '<div class="kv"><span>Buổi học đã hoàn thành</span><b>' + esc(item.completedSessions || 0) + '</b></div>'
+    + '<div class="kv"><span>Báo cáo Form 02 hợp lệ</span><b>' + esc(item.validReports || 0) + '</b></div>';
+}
+
+function honorIndividualCard(item) {
+  return '<article class="person-card"><div class="person-head">' + renderMemberAvatar(item)
+    + '<div><b>' + esc(item.name) + '</b><small>' + esc(item.villageName) + '</small></div></div>'
+    + honorMetricsMarkup(item) + '</article>';
+}
+
+function honorVillageCard(item) {
+  const avatar = item.iconUrl
+    ? '<div class="person-avatar" style="height:52px;width:52px;padding:0;overflow:hidden"><img src="' + esc(item.iconUrl) + '" alt="Biểu tượng ' + esc(item.name) + '" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display=\'none\';if(this.nextElementSibling)this.nextElementSibling.style.display=\'grid\';"><span style="display:none;width:100%;height:100%;place-items:center">' + icon('network', 22) + '</span></div>'
+    : '<div class="person-avatar" style="height:52px;width:52px">' + icon('network', 22) + '</div>';
+  return '<article class="person-card"><div class="person-head">' + avatar
+    + '<div><b>' + esc(item.name) + '</b><small>Hoạt động của Làng</small></div></div>'
+    + honorMetricsMarkup(item) + '</article>';
+}
+
+function honors() {
+  const header = pageHeader(
+    'Vinh danh tri thức',
+    '',
+    '<button class="btn" data-action="honors-refresh">' + icon('refresh') + ' Làm mới</button>',
+  );
+  if (LIVE.honors.loading) return header + '<div class="status-banner">Đang tải thống kê hoạt động từ Lark Base…</div>';
+  if (LIVE.honors.error) {
+    return header + '<div class="status-banner">' + icon('info') + ' ' + esc(LIVE.honors.error)
+      + ' <button class="btn small" data-action="honors-refresh">Thử lại</button></div>';
+  }
+  const data = LIVE.honors.data;
+  if (!data || !Array.isArray(data.individuals) || !Array.isArray(data.villages)
+    || !data.totals) {
+    return header + '<div class="status-banner">Dữ liệu Vinh danh không đúng cấu trúc; vui lòng tải lại.</div>';
+  }
+
+  const total = data.totals;
+  const individualCards = data.individuals.length
+    ? '<div class="grid3">' + data.individuals.map(honorIndividualCard).join('') + '</div>'
+    : '<div class="empty">Chưa có hoạt động cá nhân đủ điều kiện thống kê.</div>';
+  const villageCards = data.villages.length
+    ? '<div class="grid3">' + data.villages.map(honorVillageCard).join('') + '</div>'
+    : '<div class="empty">Chưa có hoạt động cấp Làng đủ điều kiện thống kê.</div>';
+  const categories = [
+    { i: 'gift', name: 'Người Gieo Tri Thức', description: 'Chia sẻ giúp người khác thực hành tốt hơn.' },
+    { i: 'spark', name: 'Người Học Hỏi Chủ Động', description: 'Nhận ra điều cần học và áp dụng kiến thức vào công việc.' },
+    { i: 'users', name: 'Cặp Đồng Hành Giá Trị', description: 'Cùng giải quyết vấn đề hoặc tạo sản phẩm tri thức hữu ích.' },
+    { i: 'network', name: 'Làng Lan Tỏa Tri Thức', description: 'Đóng góp được Làng khác sử dụng và xác nhận có ích.' },
+  ];
+
+  return header
+    + '<section style="margin-bottom:22px"><div class="section-title"><h2>Các hạng mục ghi nhận</h2></div>'
+    + '<div class="grid2">' + categories.map((item) => '<article class="reward-card"><div class="reward-icon">'
+      + icon(item.i, 25) + '</div><h3>' + esc(item.name) + '</h3><p>' + esc(item.description) + '</p></article>').join('') + '</div></section>'
+    + '<section style="margin-bottom:22px"><div class="section-title"><h2>Bảng thành tích hoạt động</h2></div>'
+    + '<div class="stat-grid honors-stat-grid">'
+    + '<div class="stat"><div><div class="number">' + esc(total.acceptedConnections || 0) + '</div><div class="label">Kết nối được chấp nhận</div></div><div class="stat-icon">' + icon('link', 22) + '</div></div>'
+    + '<div class="stat"><div><div class="number">' + esc(total.completedSessions || 0) + '</div><div class="label">Buổi học hoàn thành</div></div><div class="stat-icon">' + icon('calendar', 22) + '</div></div>'
+    + '<div class="stat"><div><div class="number">' + esc(total.validReports || 0) + '</div><div class="label">Báo cáo Form 02 hợp lệ</div></div><div class="stat-icon">' + icon('form', 22) + '</div></div>'
+    + '</div></section>'
+    + '<section style="margin-bottom:22px"><div class="section-title"><h2>Cá nhân tiêu biểu</h2></div>'
+    + individualCards + '</section>'
+    + '<section style="margin-bottom:22px"><div class="section-title"><h2>Làng tri thức tiêu biểu</h2></div>'
+    + villageCards + '</section>';
+}
+
+const GATE1_STATUS_META = {
+  '⚪ Chưa nộp': ['⚪ Chưa nộp', 'pending'],
+  '🟡 Đang kiểm tra': ['🟡 Đang kiểm tra', 'reviewing'],
+  '🟠 Cần bổ sung': ['🟠 Cần bổ sung', 'revise'],
+  '🔵 Hợp lệ': ['🔵 Hợp lệ', 'valid'],
+  '🟢 Đạt Gate 1': ['🟢 Đạt Gate 1', 'passed'],
+  '🔴 Chưa đạt Gate 1': ['🔴 Chưa đạt Gate 1', 'failed'],
+};
+const GATE1 = { loading: false, error: '', items: [], gateRecordCount: 0, unassignedRecordCount: 0, unclassifiedRecordCount: 0 };
+let gate1LoadGeneration = 0;
+function gateStatusMeta(status) { return GATE1_STATUS_META[status] || [status || 'Chưa có dữ liệu xác nhận', 'pending'] }
+function gateCounts(items = GATE1.items) {
+  return {
+    passed: items.filter(item => item.status === '🟢 Đạt Gate 1').length,
+    valid: items.filter(item => item.status === '🔵 Hợp lệ').length,
+    reviewing: items.filter(item => item.status === '🟡 Đang kiểm tra').length,
+  };
+}
+function gateCard(item) {
+  const meta = gateStatusMeta(item.status);
+  const logo = villageLogoHtml(item.villageIconUrl, item.villageName, 58);
+  const detailButton = item.recordCount === 1
+    ? '<button class="btn small btn-primary" data-action="gate-open" data-id="' + esc(item.villageId) + '">Xem hồ sơ</button>'
+    : '';
+  const fireworksButton = meta[1] === 'passed'
+    ? '<button class="btn small btn-gold" data-action="gate-fireworks" data-id="' + esc(item.villageId) + '">' + icon('spark', 14) + ' Khởi động pháo hoa</button>'
+    : '';
+  const actions = [detailButton, fireworksButton].filter(Boolean).join('');
+  return '<article class="gate-card"><div class="gate-head">' + logo + '<div><h3>' + esc(item.villageName) + '</h3><div class="gate-meta">' + esc(item.villageOffice || 'AXANH') + '</div></div><span class="gate-status ' + meta[1] + '">' + esc(meta[0]) + '</span></div><p><strong>Đang giúp:</strong> ' + esc(item.supportingVillageName || 'Chưa có dữ liệu xác nhận') + '</p><div class="gate-kv"><div><span>Giá trị hỗ trợ</span>' + esc(item.valueReceived || 'Chưa có dữ liệu xác nhận') + '</div><div><span>Dấu hiệu thay đổi</span>' + esc(item.observedChange || 'Chưa có dữ liệu xác nhận') + '</div></div>' + (actions ? '<div class="gate-actions">' + actions + '</div>' : '') + '</article>';
+}
+function gateRule(text, num) { return '<div class="rule"><div class="mini">' + num + '</div><div><b>' + text.split('|')[0] + '</b><div class="gate-note" style="margin:4px 0 0">' + text.split('|')[1] + '</div></div></div>' }
+function gate1() {
+  const c = gateCounts();
+  const gateContent = GATE1.error
+    ? '<div class="empty">Chưa có dữ liệu Gate 1 để hiển thị.</div>'
+    : GATE1.loading
+      ? '<div class="empty">Đang tải dữ liệu chính thức từ T07...</div>'
+      : GATE1.items.length
+        ? '<div class="gate-grid" style="margin-top:18px">' + GATE1.items.map(gateCard).join('') + '</div>'
+        : '<div class="empty">Không tìm thấy Làng đang hoạt động trong T01.</div>';
+  return pageHeader('Gate 1 – Điều kiện đủ tư cách Quán quân', '', '') + '<section class="gate-banner"><div class="eyebrow" style="color:#f3ca62">ĐẠI HỘI LÀNG AXANH 2026</div><h2>Phiên chợ tri thức<br>gắn trực tiếp với Gate 1 Quán quân</h2><div class="gate-strip"><div class="gate-step"><div class="pulse-star">1</div><b>Kết nối</b><small>Người có thể giúp và người đang cần giúp gặp nhau đúng nhu cầu.</small></div><div class="gate-step"><div class="pulse-star">2</div><b>Thực hành</b><small>Chia sẻ công cụ, kinh nghiệm hoặc cách làm để giải quyết vấn đề thật.</small></div><div class="gate-step"><div class="pulse-star">3</div><b>Xác nhận giá trị</b><small>Người nhận cho biết mình đã dùng được gì và thay đổi ra sao.</small></div><div class="gate-step"><div class="pulse-star">4</div><b>BTC thẩm định</b><small>Kiểm tra minh chứng, chống xác nhận chéo và chốt điều kiện Quán quân.</small></div></div></section><div class="gate-layout" style="margin-top:18px"><div><div class="panel"><div class="panel-head"><h3>11 Làng và trạng thái Gate 1</h3></div><div class="gate-mini-stats"><div class="gate-mini"><b>' + c.passed + '</b><small>Làng đã đạt Gate 1</small></div><div class="gate-mini"><b>' + c.valid + '</b><small>Hồ sơ hợp lệ chờ chốt</small></div><div class="gate-mini"><b>' + c.reviewing + '</b><small>Hồ sơ đang kiểm tra</small></div></div><div class="gate-legend"><span><i style="background:#167953"></i>Đạt Gate 1</span><span><i style="background:#325ea3"></i>Hợp lệ</span><span><i style="background:#a06a09"></i>Đang kiểm tra</span><span><i style="background:#b24c45"></i>Cần bổ sung / Chưa đạt</span></div>' + gateContent + '</div></div><aside><div class="panel"><div class="panel-head"><h3>5 nguyên tắc bắt buộc</h3></div><div class="gate-principles">' + [
+    'Có ít nhất một Làng khác xác nhận nhận được giá trị cụ thể|Không tính chung chung kiểu “đã hỗ trợ”, mà phải rõ giúp điều gì.',
+    'Người nhận đã dùng hoặc áp dụng sự hỗ trợ|Gate 1 không dừng ở buổi chia sẻ, mà phải có bước áp dụng thật.',
+    'Có thay đổi tích cực và có minh chứng kiểm tra được|Ví dụ: checklist, SOP, ảnh chụp, phản hồi công việc, ví dụ trước/sau.',
+    'Không xác nhận chéo để cùng đạt Gate 1|Nếu A dùng xác nhận từ B thì B không dùng xác nhận ngược lại từ A cho cùng mục đích.',
+    'Người xác nhận là Trưởng hoặc Phó Làng nhận, BTC thẩm định cuối cùng|App cần phân quyền rõ ai xác nhận và ai phê duyệt.'
+  ].map((t, i) => gateRule(t, i + 1)).join('') +   '</div><p class="gate-note"><strong>Ghi nhớ:</strong> Gate 1 nằm ngoài thang điểm 100 và là điều kiện bắt buộc để xét Quán quân. Vì vậy, app cần giúp nhìn rõ tiến độ chứ không biến việc giúp nhau thành chạy điểm.</p></div><div class="panel" style="margin-top:16px"><div class="panel-head"><h3>Tiến độ mẫu đề xuất</h3></div><div class="timeline-box"><div class="timeline-card"><b>Trước cuộc họp</b><p>Mọi người điền Form 01 “Tôi có thể giúp / Tôi mong được giúp”.</p></div><div class="timeline-card"><b>Sau khi ghép cặp</b><p>Hai bên hẹn thời gian, chia sẻ ngắn 20–30 phút, tập trung vào một vấn đề thật.</p></div><div class="timeline-card"><b>Sau khi đã học</b><p>Người nhận điền Form 02 để phản hồi điều đã áp dụng được. Nếu đủ điều kiện, app gợi ý chuyển sang hồ sơ Gate 1.</p></div><div class="timeline-card"><b>BTC thẩm định</b><p>Kiểm tra minh chứng, cảnh báo xác nhận chéo và chốt trạng thái cuối cùng. Mốc khóa Gate 1 theo Rulebook là 24/12/2026.</p></div></div></div></aside></div>'
+}
+async function loadGate1(forceFresh = false) {
+  const generation = ++gate1LoadGeneration;
+  GATE1.loading = true;
+  GATE1.error = '';
+  GATE1.items = [];
+  GATE1.gateRecordCount = 0;
+  GATE1.unassignedRecordCount = 0;
+  GATE1.unclassifiedRecordCount = 0;
+  if (currentPage === 'gate1') render();
+  try {
+    if (!window.AXANH_LIVE_API?.getGate1) throw new Error('Thiếu API Gate 1.');
+    const result = await window.AXANH_LIVE_API.getGate1({ forceFresh });
+    if (!Array.isArray(result.items)) throw new Error('Dữ liệu Gate 1 không đúng cấu trúc.');
+    if (generation !== gate1LoadGeneration) return;
+    GATE1.items = result.items;
+    GATE1.gateRecordCount = Number(result.gateRecordCount) || 0;
+    GATE1.unassignedRecordCount = Number(result.unassignedRecordCount) || 0;
+    GATE1.unclassifiedRecordCount = Number(result.unclassifiedRecordCount) || 0;
+  } catch (error) {
+    if (generation !== gate1LoadGeneration) return;
+    GATE1.items = [];
+    GATE1.gateRecordCount = 0;
+    GATE1.unassignedRecordCount = 0;
+    GATE1.unclassifiedRecordCount = 0;
+    GATE1.error = error instanceof Error ? error.message : 'Không xác định';
+  } finally {
+    if (generation === gate1LoadGeneration) {
+      GATE1.loading = false;
+      if (currentPage === 'gate1' || currentPage === 'home') render();
+    }
+  }
+}
+function openGateDetail(villageId) {
+  const item = GATE1.items.find(entry => entry.villageId === villageId);
+  if (!item || item.recordCount !== 1) return;
+  const meta = gateStatusMeta(item.status);
+  const missing = 'Chưa có dữ liệu xác nhận';
+  openModal('Hồ sơ Gate 1 · ' + esc(item.villageName),
+    '<div class="person-head" style="margin-bottom:20px">' + villageLogoHtml(item.villageIconUrl, item.villageName, 72) + '<div><b style="font-size:16px">' + esc(item.villageName) + '</b><small>' + esc(item.villageOffice || 'AXANH') + '</small></div><span class="gate-status ' + meta[1] + '" style="margin-left:auto">' + esc(meta[0]) + '</span></div>'
+    + '<div class="kv"><span>Làng nhận giá trị</span><b>' + esc(item.villageName) + '</b></div>'
+    + '<div class="kv"><span>Làng hỗ trợ</span><b>' + esc(item.supportingVillageName || missing) + '</b></div>'
+    + '<div class="kv"><span>Giá trị hỗ trợ</span><b>' + esc(item.valueReceived || missing) + '</b></div>'
+    + '<div class="kv"><span>Dấu hiệu thay đổi</span><b>' + esc(item.observedChange || missing) + '</b></div>'
+    + '<div class="kv"><span>Xác nhận người nhận</span><b>' + esc(item.recipientConfirmation || missing) + '</b></div>'
+    + '<div class="kv"><span>BTC thẩm định</span><b>' + esc(item.btcVerification || missing) + '</b></div>'
+    + '<div class="kv"><span>Minh chứng</span><b>' + (item.evidenceCount ? esc(item.evidenceCount + ' mục được liên kết') : missing) + '</b></div>',
+    '<button class="btn" data-action="close-modal">Đóng</button>');
+}
+function clearGate1Data() {
+  gate1LoadGeneration += 1;
+  Object.assign(GATE1, { loading: false, error: '', items: [], gateRecordCount: 0, unassignedRecordCount: 0, unclassifiedRecordCount: 0 });
+}
+
+function forms() {
+  const reg = STATE.settings.registrationUrl;
+  const res = STATE.settings.resultUrl;
+  return pageHeader(
+    'Hai biểu mẫu',
+    '',
+    '<button class="btn btn-gold" data-action="nav" data-page="gate1">' + icon('shield') + ' Xem Gate 1</button>'
+  ) + '<div class="form-grid">'
+    + '<div class="form-tile">'
+    + '  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;position:relative;z-index:2">'
+    + '    <div class="form-number">BIỂU MẪU 01</div>'
+    +      (reg ? '<span class="form-status-tag ready">● Đã liên kết Lark Form</span>' : '<span class="form-status-tag missing">○ Chưa cấu hình biểu mẫu</span>')
+    + '  </div>'
+    + '  <h3>Tôi có thể giúp / Tôi muốn học</h3>'
+    + '  <p>Mở gian hàng tri thức, nêu một kỹ năng có thể chia sẻ và một nhu cầu học hỏi. Dữ liệu gửi từ form này sẽ được ghi trực tiếp vào Lark Base.</p>'
+    + '  <div class="btnbar">'
+    +      (reg
+             ? '<button class="btn btn-primary" data-action="open-lark-form" data-form="registration">' + icon('form') + ' Điền Form 01</button>'
+               + '<button class="btn" data-action="external-form" data-form="registration">' + icon('external') + ' Mở trên Lark</button>'
+             : '<button class="btn" disabled style="opacity:0.6">' + icon('form') + ' Điền Form 01 (Chưa cấu hình)</button>'
+           )
+    + '  </div>'
+    + '</div>'
+    + '<div class="form-tile">'
+    + '  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;position:relative;z-index:2">'
+    + '    <div class="form-number">BIỂU MẪU 02</div>'
+    +      (res ? '<span class="form-status-tag ready">● Đã liên kết Lark Form</span>' : '<span class="form-status-tag missing">○ Chưa cấu hình biểu mẫu</span>')
+    + '  </div>'
+    + '  <h3>Tôi đã học và áp dụng được gì?</h3>'
+    + '  <p>Người nhận hỗ trợ chia sẻ bài học, đánh giá mức độ hữu ích và một bước sẽ áp dụng. Ghi nhận dữ liệu để thẩm định điều kiện Gate 1.</p>'
+    + '  <div class="btnbar">'
+    +      (res
+             ? '<button class="btn btn-primary" data-action="open-lark-form" data-form="result">' + icon('form') + ' Điền Form 02</button>'
+               + '<button class="btn" data-action="external-form" data-form="result">' + icon('external') + ' Mở trên Lark</button>'
+             : '<button class="btn" disabled style="opacity:0.6">' + icon('form') + ' Điền Form 02 (Chưa cấu hình)</button>'
+           )
+    + '  </div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="section-title"><h2>Luồng kết nối dữ liệu biểu mẫu</h2></div>'
+    + '<div class="panel">'
+    + '  <div class="steps">'
+    + '    <div class="step"><span class="step-num">01 / LARK FORM</span><b>Thu thập dữ liệu</b><p>Form đăng ký / báo cáo ghi bản ghi an toàn vào Lark Base.</p></div>'
+    + '    <div class="step"><span class="step-num">02 / BACKEND API</span><b>Đọc và xử lý</b><p>Đồng bộ hồ sơ, kiểm tra điều kiện Gate 1, xác nhận kết quả.</p></div>'
+    + '    <div class="step"><span class="step-num">03 / WEB APP</span><b>Trình bày & Vinh danh</b><p>Hiển thị kết nối, lịch sinh hoạt và tiến độ Quán quân.</p></div>'
+    + '  </div>'
+    + '</div>';
+}
+
+function settings() {
+  if (!LIVE.currentUser?.isAdmin) {
+    return pageHeader('Không có quyền truy cập', 'Chỉ tài khoản quản trị mới có thể cấu hình tích hợp Lark.', '');
+  }
+  return pageHeader(
+    'Cấu hình tích hợp Lark',
+    'Quản lý tập trung đường dẫn Form 01 và Form 02 để nhúng trực tiếp vào AXANH Gate1. Cấu hình được lưu an toàn tại máy chủ Backend và áp dụng chung cho tất cả nhân viên.',
+    ''
+  ) + '<div class="panel">'
+    + '<div class="section-title" style="margin:0 0 15px">'
+    + '  <h2>Liên kết biểu mẫu và Lark Base</h2>'
+    + '  <span style="color:var(--blue);font-weight:700">● Lưu tập trung máy chủ (Backend SQLite)</span>'
+    + '</div>'
+    + '<form id="settingsForm" class="settings-form">'
+    + '  <div class="field">'
+    + '    <label>URL Form 01 – Đăng ký trao / nhận tri thức</label>'
+    + '    <input name="registrationUrl" type="url" value="' + esc(STATE.settings.registrationUrl) + '" placeholder="https://example.larksuite.com/share/base/form/..."/>'
+    + '    <small>Dán liên kết Share / Publish Form của Lark Base (bắt buộc HTTPS, tên miền larksuite.com hoặc feishu.cn).</small>'
+    + '  </div>'
+    + '  <div class="field">'
+    + '    <label>URL Form 02 – Báo cáo kết quả hỗ trợ</label>'
+    + '    <input name="resultUrl" type="url" value="' + esc(STATE.settings.resultUrl) + '" placeholder="https://example.larksuite.com/share/base/form/..."/>'
+    + '    <small>Dán liên kết Share / Publish Form của Lark Base (bắt buộc HTTPS, tên miền larksuite.com hoặc feishu.cn).</small>'
+    + '  </div>'
+    + '  <div class="field">'
+    + '    <label>URL bảng Lark Base (đã cung cấp)</label>'
+    + '    <input name="larkBase" type="url" value="' + esc(STATE.settings.larkBase) + '"/>'
+    + '    <small>Chỉ dùng để mở nhanh tới bảng Lark Base trên trình duyệt.</small>'
+    + '  </div>'
+    + '  <div class="btnbar">'
+    + '    <button type="submit" class="btn btn-primary">' + icon('check') + ' Lưu cấu hình</button>'
+    + '    <button type="button" class="btn" data-action="open-base">' + icon('external') + ' Mở bảng Lark Base</button>'
+    + '  </div>'
+    + '</form>'
+    + '</div>'
+;
+}
+function footer() { return '<footer class="footer"><span>© AXANH · ATED PRO 2026 · Phiên chợ tri thức</span><span>AXANH Gate1 · Hệ thống vận hành nội bộ</span></footer>' }
+// Live read-only directory. Keep separate from SEED, matching and Gate 1 demo.
+function livePageStatus() {
+  if (LIVE.loading) return '<div class="panel"><h3>Đang tải danh bạ...</h3><p>Đang lấy dữ liệu qua backend Lark API.</p></div>';
+  if (LIVE.error) return '<div class="panel"><h3>Không thể tải dữ liệu</h3><p>' + esc(LIVE.error) + '</p><button class="btn btn-primary" data-action="live-refresh">Thử tải lại</button></div>';
+  if (!LIVE.connected) return '<div class="panel">Chưa kết nối danh bạ Lark Base.</div>';
+  return '';
+}
+
+function renderVillageLogo(v) {
+  const altText = 'Logo ' + (v.name || v.id || 'Làng');
+  if (v.iconUrl) {
+    return '<div class="village-logo-wrap">'
+      + '<img class="village-logo" src="' + esc(v.iconUrl) + '" alt="' + esc(altText) + '" loading="lazy" onerror="this.style.display=\'none\';if(this.nextElementSibling)this.nextElementSibling.style.display=\'grid\';">'
+      + '<div class="village-logo-placeholder" style="display:none">AX</div>'
+      + '</div>';
+  }
+  return '<div class="village-logo-wrap"><div class="village-logo-placeholder">AX</div></div>';
+}
+
+function villageCard(v) {
+  const count = Number.isFinite(v.memberCount) ? String(v.memberCount) : '—';
+  const isMyVillage = LIVE.currentUser && (
+    (v.id && LIVE.currentUser.villageId && v.id === LIVE.currentUser.villageId) ||
+    (v.name && LIVE.currentUser.villageName && v.name.toLowerCase() === LIVE.currentUser.villageName.toLowerCase())
+  );
+  const myVillageTag = isMyVillage ? ' <span class="tag gold" style="font-size:10.5px;padding:1px 6px">● Làng của tôi</span>' : '';
+  const hasScore = Number.isFinite(v.totalScore);
+  const hasGate1 = typeof v.gate1Status === 'string' && v.gate1Status.trim() !== '';
+
+  return '<article class="panel village-card"' + (isMyVillage ? ' style="border-top:3px solid #f59e0b"' : '') + '>'
+    + '<div class="village-head">'
+    + renderVillageLogo(v)
+    + '<div class="village-head-info">'
+    + '<div class="row-flex"><b>' + esc(v.name || v.id || 'Làng chưa có tên') + '</b>' + myVillageTag + '<span class="tag teal">LARK · ' + esc(v.id || '—') + '</span></div>'
+    + '<p class="village-slogan">' + esc(v.slogan || 'Chưa cập nhật khẩu hiệu') + '</p>'
+    + '</div>'
+    + '</div>'
+    + '<div class="kv"><span>Văn phòng</span><b>' + esc(v.office || '—') + '</b></div>'
+    + '<div class="kv"><span>Trưởng làng</span><b>' + esc(v.leader || '—') + '</b></div>'
+    + '<div class="kv"><span>Phó làng</span><b>' + esc(v.deputy || '—') + '</b></div>'
+    + '<div class="kv"><span>Thành viên</span><b>' + count + '</b></div>'
+    + (hasScore ? '<div class="kv"><span>Điểm trong Base</span><b>' + String(v.totalScore) + '</b></div>' : '')
+    + (hasGate1 ? '<div class="kv"><span>Gate 1 (theo T01)</span><b>' + esc(v.gate1Status) + '</b></div>' : '')
+    + '</article>';
+}
+
+function liveVillagesPage() {
+  const pending = livePageStatus();
+  return pageHeader('11 Làng AXANH', '', '<button class="btn" data-action="live-refresh">' + icon('refresh') + ' Làm mới dữ liệu</button>')
+    + pending
+    + (LIVE.connected ? '<div class="grid3">' + [...LIVE.villages].sort((a, b) => String(a.id).localeCompare(String(b.id))).map(villageCard).join('') + '</div>' : '');
+}
+
+function matchingMembers() {
+  const q = liveMemberSearch.trim().toLocaleLowerCase('vi');
+  return LIVE.members.filter((m) => {
+    const hay = [m.id, m.name, m.villageName, m.office, m.programRole].filter(Boolean).join(' ').toLocaleLowerCase('vi');
+    return hay.includes(q) && (liveMemberOffice === 'all' || m.office === liveMemberOffice);
+  });
+}
+
+function renderMemberAvatar(m) {
+  const altText = 'Avatar ' + (m.name || m.id || 'thành viên');
+  if (m.avatarUrl) {
+    return '<div class="person-avatar" style="height:52px;width:52px;padding:0;overflow:hidden">'
+      + '<img class="member-avatar" src="' + esc(m.avatarUrl) + '" alt="' + esc(altText) + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display=\'none\';if(this.nextElementSibling)this.nextElementSibling.style.display=\'grid\';">'
+      + '<div class="member-avatar-placeholder" style="display:none;width:100%;height:100%;place-items:center">AX</div>'
+      + '</div>';
+  }
+  return '<div class="person-avatar" style="height:52px;width:52px">AX</div>';
+}
+
+function liveMemberCards() {
+  const items = matchingMembers();
+  if (!items.length) return '<div class="empty">Không tìm thấy thành viên phù hợp với bộ lọc.</div>';
+  return items.map((m) => {
+    const status = m.active === true ? 'Đang tham gia' : m.active === false ? 'Không tham gia' : 'Chưa xác định';
+    return '<article class="person-card"><div class="person-head">' + renderMemberAvatar(m) + '<div><b>' + esc(m.name || 'Chưa có tên') + '</b><small>' + esc(m.id || '—') + '</small></div><span class="tag teal">LARK</span></div>'
+      + '<div class="kv"><span>Làng</span><b>' + esc(m.villageName || 'Chưa liên kết') + '</b></div>'
+      + '<div class="kv"><span>Văn phòng</span><b>' + esc(m.office || '—') + '</b></div>'
+      + '<div class="kv"><span>Vai trò</span><b>' + esc(m.programRole || '—') + '</b></div>'
+      + '<div class="kv"><span>Active✅</span><b>' + esc(status) + '</b></div>'
+      + '<p class="muted" style="font-size:12px">Kỹ năng và nhu cầu chưa được đăng ký trong Base.</p></article>';
+  }).join('');
+}
+
+function liveMembersPage() {
+  const pending = livePageStatus();
+  const n = LIVE.connected ? matchingMembers().length : 0;
+  const villageName = LIVE.currentUser?.villageName || 'Tên làng';
+  return pageHeader('Danh sách thành viên – ' + villageName, '', '<button class="btn" data-action="live-refresh">' + icon('refresh') + ' Làm mới dữ liệu</button>')
+    + pending
+    + (LIVE.connected ? '<div class="search-area"><div class="field-search">' + icon('search') + '<input id="liveMemberSearch" placeholder="Tìm tên, làng, mã thành viên..." value="' + esc(liveMemberSearch) + '"></div>'
+      + '<select class="select" id="liveMemberOffice"><option value="all">Tất cả văn phòng</option>'
+      + ['VPC', 'VP1', 'VP2', 'IT', 'HR'].map(x => '<option value="' + x + '" ' + (liveMemberOffice === x ? 'selected' : '') + '>' + x + '</option>').join('')
+      + '</select></div><p class="muted" id="liveMemberCount">Đang hiển thị ' + n + '/' + LIVE.members.length + ' thành viên</p>'
+      + '<div id="liveMemberGrid" class="grid3">' + liveMemberCards() + '</div>' : '');
+}
+
+function renderUserHeader() {
+  const container = document.querySelector('.top-actions');
+  if (!container) return;
+  const u = LIVE.currentUser;
+  if (u) {
+    const avatarHtml = u.avatarUrl
+      ? '<img class="user-avatar-img" src="' + esc(u.avatarUrl) + '" alt="Avatar ' + esc(u.name || '') + '">'
+      : '<div class="user-avatar-initials">' + esc(u.name ? u.name.slice(0, 2).toUpperCase() : 'AX') + '</div>';
+
+    container.innerHTML = '<span class="chip chip-demo">● ' + (LIVE.connected ? 'LARK LIVE' : 'DEMO') + '</span>'
+      + '<button class="topbar-bell-btn" data-action="toggle-notifications" aria-label="Lời mời kết nối" title="Lời mời kết nối (' + (LIVE.notificationCount || 0) + ' chờ xác nhận)">'
+      + icon('bell', 18)
+      + (LIVE.notificationCount > 0 ? '<span class="topbar-bell-badge">' + LIVE.notificationCount + '</span>' : '')
+      + '</button>'
+      + '<div class="user-menu-wrap">'
+      + '  <button class="user-avatar-btn" data-action="toggle-user-menu" aria-expanded="false" aria-haspopup="true" title="Tài khoản">'
+      + '    ' + avatarHtml
+      + '    <span class="user-avatar-name">' + esc(u.name || 'Thành viên') + '</span>'
+      + '    <span class="user-avatar-caret">▾</span>'
+      + '  </button>'
+      + '  <div class="user-dropdown" id="userDropdown" role="menu">'
+      + '    <div class="user-dropdown-header">'
+      + '      <div class="user-dropdown-name">' + esc(u.name || 'Thành viên') + '</div>'
+      + '      <div class="user-dropdown-meta">'
+      + '        <strong style="color:var(--navy);font-size:12.5px">' + esc(u.villageName || '—') + '</strong><br>'
+      + '        <span>' + esc(u.office || '') + (u.role ? ' · ' + esc(u.role) : '') + '</span><br>'
+      + '        <span style="font-family:Consolas,monospace;font-size:11px;color:var(--muted)">' + esc(u.memberId || '') + '</span>'
+      + '      </div>'
+      + '    </div>'
+      + '    <button class="user-dropdown-item" data-action="my-profile" role="menuitem">'
+      + '      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--blue)"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+      + '      Hồ sơ của tôi'
+      + '    </button>'
+      + '    <button class="user-dropdown-item danger" data-action="logout" role="menuitem">'
+      + '      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'
+      + '      Đăng xuất'
+      + '    </button>'
+      + '  </div>'
+      + '</div>';
+  } else {
+    container.innerHTML = '<span class="chip chip-demo">● CHẾ ĐỘ DEMO</span>'
+      + '<a href="/auth/lark/login" class="btn btn-primary small" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">🔑 Đăng nhập Lark</a>';
+  }
+}
+
+const AUTH_FLOW = {
+  step: 'email', // 'email' | 'otp'
+  email: '',
+  cooldown: 0,
+  expiresIn: 0,
+  timerInterval: null,
+};
+
+function clearAuthTimer() {
+  if (AUTH_FLOW.timerInterval) {
+    clearInterval(AUTH_FLOW.timerInterval);
+    AUTH_FLOW.timerInterval = null;
+  }
+}
+
+function startAuthTimer() {
+  clearAuthTimer();
+  AUTH_FLOW.timerInterval = setInterval(() => {
+    let changed = false;
+    if (AUTH_FLOW.cooldown > 0) {
+      AUTH_FLOW.cooldown -= 1;
+      changed = true;
+    }
+    if (AUTH_FLOW.expiresIn > 0) {
+      AUTH_FLOW.expiresIn -= 1;
+      changed = true;
+    }
+    if (changed) {
+      updateAuthTimerDisplay();
+    }
+    if (AUTH_FLOW.cooldown <= 0 && AUTH_FLOW.expiresIn <= 0) {
+      clearAuthTimer();
+    }
+  }, 1000);
+}
+
+function formatMinutes(seconds) {
+  const m = Math.floor(Math.max(0, seconds) / 60);
+  const s = Math.max(0, seconds) % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function updateAuthTimerDisplay() {
+  const timerEl = document.getElementById('authExpireTimer');
+  if (timerEl) {
+    timerEl.textContent = formatMinutes(AUTH_FLOW.expiresIn);
+  }
+  const resendBtn = document.getElementById('authResendBtn');
+  if (resendBtn) {
+    if (AUTH_FLOW.cooldown > 0) {
+      resendBtn.disabled = true;
+      resendBtn.textContent = `Gửi lại mã (${AUTH_FLOW.cooldown}s)`;
+    } else {
+      resendBtn.disabled = false;
+      resendBtn.textContent = 'Gửi lại mã';
+    }
+  }
+}
+
+function renderAuthScreen(opts = {}) {
+  const { loading = false, error = '' } = opts;
+  const authEl = document.getElementById('authScreen');
+  const appShell = document.getElementById('appShell') || document.querySelector('.app-shell');
+  if (!authEl) return;
+
+  if (loading) {
+    authEl.style.display = 'flex';
+    if (appShell) appShell.style.display = 'none';
+    authEl.innerHTML = '<div class="axanh-auth-loading"><div class="axanh-auth-spinner"></div><span>Đang kết nối hệ thống...</span></div>';
+    return;
+  }
+
+  authEl.style.display = 'flex';
+  if (appShell) appShell.style.display = 'none';
+
+  const logoSrc = (window.SEED && window.SEED.navyLogo) ? window.SEED.navyLogo : '';
+  const logoTag = logoSrc
+    ? '<img class="axanh-login-logo" src="' + logoSrc + '" alt="Logo AXANH">'
+    : '<div style="font-size:28px;font-weight:900;color:#eff5ff;margin-bottom:20px;letter-spacing:2px">AXANH</div>';
+  const errorHtml = error ? '<div class="axanh-login-error">⚠ ' + esc(error) + '</div>' : '';
+
+  const isLarkEnv = typeof window.tt !== 'undefined' && typeof window.tt.requestAuthCode === 'function';
+
+  let formContentHtml = '';
+
+  if (AUTH_FLOW.step === 'email') {
+    formContentHtml = '<form id="authEmailForm" autocomplete="on">'
+      + '<div class="axanh-login-input-group">'
+      + '  <label class="axanh-login-label" for="authEmailInput">Email nhân viên đã liên kết</label>'
+      + '  <input class="axanh-login-input" type="email" id="authEmailInput" name="email" required autocomplete="email" placeholder="ví dụ: ten.nv@axanh.com" value="' + esc(AUTH_FLOW.email) + '">'
+      + '</div>'
+      + errorHtml
+      + '<button class="axanh-login-btn" type="submit" id="authSendOtpBtn">'
+      + '  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/></svg>'
+      + '  Nhận mã OTP qua Email'
+      + '</button>'
+      + '</form>';
+  } else {
+    // Step: OTP
+    formContentHtml = '<form id="authOtpForm" autocomplete="off">'
+      + '<div class="axanh-otp-meta">'
+      + '  Đã gửi mã xác thực 6 số đến: <strong style="color:#eff5ff">' + esc(AUTH_FLOW.email) + '</strong><br>'
+      + '  Hiệu lực còn lại: <span class="axanh-otp-timer" id="authExpireTimer">' + formatMinutes(AUTH_FLOW.expiresIn) + '</span>'
+      + '</div>'
+      + '<div class="axanh-login-input-group">'
+      + '  <input class="axanh-login-input axanh-otp-input" type="text" id="authOtpInput" name="otp" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="••••••" autofocus>'
+      + '</div>'
+      + errorHtml
+      + '<button class="axanh-login-btn btn-teal" type="submit" id="authVerifyOtpBtn">'
+      + '  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 5 5L20 6"/></svg>'
+      + '  Xác nhận & Đăng nhập'
+      + '</button>'
+      + '<div class="axanh-otp-actions">'
+      + '  <button type="button" class="axanh-link-btn" id="authBackBtn">← Đổi email khác</button>'
+      + '  <button type="button" class="axanh-link-btn" id="authResendBtn"' + (AUTH_FLOW.cooldown > 0 ? ' disabled' : '') + '>'
+      + (AUTH_FLOW.cooldown > 0 ? `Gửi lại mã (${AUTH_FLOW.cooldown}s)` : 'Gửi lại mã')
+      + '  </button>'
+      + '</div>'
+      + '</form>';
+  }
+
+  authEl.innerHTML = '<div class="axanh-login-card">'
+    + logoTag
+    + '<div class="axanh-login-badge">ATED PRO 2026</div>'
+    + '<h1 class="axanh-login-title">Phiên Chợ Tri Thức</h1>'
+    + '<p class="axanh-login-desc">'
+    + (AUTH_FLOW.step === 'email' ? 'Nhập email nhân viên AXANH để nhận mã xác thực bảo mật.' : 'Nhập mã gồm 6 chữ số vừa nhận trong email.')
+    + '</p>'
+    + formContentHtml
+    + '<div class="axanh-login-divider">HOẶC DÀNH CHO TÀI KHOẢN LARK</div>'
+    + (isLarkEnv
+        ? '<button class="axanh-secondary-btn" id="larkInAppLoginBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>Đăng nhập bằng Lark Client</button>'
+        : '<a href="/auth/lark/login" class="axanh-secondary-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>Đăng nhập bằng Lark (SSO)</a>')
+    + '<div class="axanh-login-footer">Hệ thống nội bộ AXANH · ATED PRO 2026<br>Xác thực qua danh bạ thành viên T02_Members</div>'
+    + '</div>';
+
+  // Attach Handlers
+
+  const emailForm = document.getElementById('authEmailForm');
+  if (emailForm) {
+    emailForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const emailInput = document.getElementById('authEmailInput');
+      const emailVal = (emailInput?.value || '').trim();
+      if (!emailVal) return;
+
+      const btn = document.getElementById('authSendOtpBtn');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = 'Đang gửi mã xác thực...';
+      }
+
+      try {
+        const res = await window.AXANH_LIVE_API.requestOtp(emailVal);
+        AUTH_FLOW.email = emailVal;
+        AUTH_FLOW.step = 'otp';
+        AUTH_FLOW.cooldown = res.cooldownSeconds || 60;
+        AUTH_FLOW.expiresIn = (res.ttlMinutes || 5) * 60;
+        startAuthTimer();
+        renderAuthScreen();
+      } catch (err) {
+        renderAuthScreen({ error: err.message || 'Không thể gửi mã xác thực.' });
+      }
+    });
+  }
+
+  const otpForm = document.getElementById('authOtpForm');
+  if (otpForm) {
+    const otpInput = document.getElementById('authOtpInput');
+    if (otpInput) {
+      otpInput.focus();
+      otpInput.addEventListener('input', () => {
+        // Only allow digits
+        otpInput.value = otpInput.value.replace(/\D/g, '').slice(0, 6);
+        if (otpInput.value.length === 6) {
+          // Auto submit when 6 digits entered
+          otpForm.requestSubmit();
+        }
+      });
+    }
+
+    otpForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const otpVal = (otpInput?.value || '').trim();
+      if (otpVal.length !== 6) {
+        renderAuthScreen({ error: 'Vui lòng nhập đủ 6 chữ số mã xác thực.' });
+        return;
+      }
+
+      const verifyBtn = document.getElementById('authVerifyOtpBtn');
+      if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.innerHTML = 'Đang xác thực...';
+      }
+
+      try {
+        const res = await window.AXANH_LIVE_API.verifyOtp(AUTH_FLOW.email, otpVal);
+        if (res && res.authenticated) {
+          clearAuthTimer();
+          AUTH_FLOW.step = 'email';
+          AUTH_FLOW.email = '';
+          LIVE.currentUser = res.user;
+          showAppShell();
+          render();
+          await loadLiveData();
+        } else {
+          renderAuthScreen({ error: 'Xác thực không thành công.' });
+        }
+      } catch (err) {
+        renderAuthScreen({ error: err.message || 'Mã xác thực không hợp lệ.' });
+      }
+    });
+
+    const backBtn = document.getElementById('authBackBtn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        clearAuthTimer();
+        AUTH_FLOW.step = 'email';
+        renderAuthScreen();
+      });
+    }
+
+    const resendBtn = document.getElementById('authResendBtn');
+    if (resendBtn) {
+      resendBtn.addEventListener('click', async () => {
+        if (AUTH_FLOW.cooldown > 0) return;
+        resendBtn.disabled = true;
+        resendBtn.textContent = 'Đang gửi lại...';
+        try {
+          const res = await window.AXANH_LIVE_API.requestOtp(AUTH_FLOW.email);
+          AUTH_FLOW.cooldown = res.cooldownSeconds || 60;
+          AUTH_FLOW.expiresIn = (res.ttlMinutes || 5) * 60;
+          startAuthTimer();
+          renderAuthScreen();
+        } catch (err) {
+          renderAuthScreen({ error: err.message || 'Không thể gửi lại mã.' });
+        }
+      });
+    }
+  }
+
+  // In-App Lark login
+  if (isLarkEnv) {
+    const inAppBtn = document.getElementById('larkInAppLoginBtn');
+    if (inAppBtn) {
+      inAppBtn.addEventListener('click', async () => {
+        inAppBtn.disabled = true;
+        inAppBtn.textContent = 'Đang xác thực...';
+        try {
+          const code = await new Promise((resolve, reject) => {
+            window.tt.requestAuthCode({
+              appId: '',
+              success: (res) => resolve(res.code),
+              fail: (err) => reject(new Error(err?.errMsg || 'Lark auth thất bại')),
+            });
+          });
+          const res = await fetch('/auth/lark/in-app-login', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+          });
+          const data = await res.json();
+          if (res.ok && data.authenticated) {
+            clearAuthTimer();
+            LIVE.currentUser = data.user;
+            showAppShell();
+            render();
+            await loadLiveData();
+          } else {
+            renderAuthScreen({ error: data.error || 'Xác thực Lark thất bại.' });
+          }
+        } catch (err) {
+          renderAuthScreen({ error: err.message || 'Không thể kết nối Lark.' });
+        }
+      });
+    }
+  }
+}
+
+function showAuthScreen(error = '') {
+  renderAuthScreen({ error });
+}
+
+function showAppShell() {
+  const authEl = document.getElementById('authScreen');
+  const appShell = document.getElementById('appShell') || document.querySelector('.app-shell');
+  if (authEl) authEl.style.display = 'none';
+  if (appShell) appShell.style.display = '';
+}
+
+function openMyProfileModal() {
+  const u = LIVE.currentUser;
+  if (!u) return;
+  const avatarHtml = u.avatarUrl
+    ? '<img src="' + esc(u.avatarUrl) + '" alt="Avatar" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #edbd4b;margin-bottom:14px">'
+    : '<div class="avatar-mini" style="width:72px;height:72px;font-size:22px;border:3px solid #edbd4b;margin-bottom:14px">' + esc(u.name ? u.name.slice(0, 2).toUpperCase() : 'AX') + '</div>';
+  openModal('Hồ sơ của tôi',
+    '<div style="text-align:center">' + avatarHtml + '</div>'
+    + '<div class="kv"><span>Họ tên</span><b>' + esc(u.name || '—') + '</b></div>'
+    + '<div class="kv"><span>Member ID</span><b>' + esc(u.memberId || '—') + '</b></div>'
+    + '<div class="kv"><span>Làng</span><b>' + esc(u.villageName || '—') + '</b></div>'
+    + '<div class="kv"><span>Văn phòng</span><b>' + esc(u.office || '—') + '</b></div>'
+    + '<div class="kv"><span>Vai trò</span><b>' + esc(u.role || '—') + '</b></div>',
+    '<button class="btn" data-action="close-modal">Đóng</button>'
+  );
+}
+
+async function loadLiveData() {
+  if (!window.AXANH_LIVE_API) {
+    LIVE.loading = false;
+    LIVE.error = 'Thiếu FrontEnd/api.js.';
+    render();
+    return;
+  }
+  LIVE.loading = true;
+  LIVE.error = '';
+  render();
+  try {
+    const { villages, members } = await window.AXANH_LIVE_API.loadData();
+    LIVE.villages = villages;
+    LIVE.members = members;
+    LIVE.connected = true;
+  } catch (error) {
+    LIVE.connected = false;
+    LIVE.villages = [];
+    LIVE.members = [];
+    LIVE.error = error instanceof Error ? error.message : 'Không xác định';
+  } finally {
+    LIVE.loading = false;
+    render();
+  }
+  // Tải booths và connections song song sau khi đã kết nối
+  loadLiveBooths();
+  loadLiveConnections();
+}
+
+async function loadLiveConnections() {
+  const api = window.AXANH_LIVE_API;
+
+  if (!api ||
+      typeof api.getConnectionsMine !== 'function' ||
+      typeof api.getConnectionsInbox !== 'function' ||
+      typeof api.getNotificationsCount !== 'function') {
+    const message = 'Dịch vụ kết nối chưa sẵn sàng.';
+    if (LIVE.connectionsError !== message) toast(message, 'warn');
+    LIVE.connectionsError = message;
+    return;
+  }
+
+  LIVE.connectionsLoading = true;
+
+  try {
+    const [mine, inbox, notif] = await Promise.all([
+      api.getConnectionsMine(),
+      api.getConnectionsInbox(),
+      api.getNotificationsCount(),
+    ]);
+
+    if (!Array.isArray(mine) ||
+        !Array.isArray(inbox) ||
+        !notif ||
+        !Number.isSafeInteger(notif.pendingCount) ||
+        notif.pendingCount < 0) {
+      throw new Error('Dữ liệu kết nối từ Backend không hợp lệ.');
+    }
+
+    LIVE.connections = mine;
+    LIVE.inboxConnections = inbox;
+    LIVE.notificationCount = notif.pendingCount;
+    LIVE.connectionsError = '';
+
+  } catch (err) {
+    const message = 'Không thể đồng bộ kết nối. Dữ liệu có thể đã cũ.';
+    console.warn('[Connections] Failed to load live connections:', err);
+
+    if (LIVE.connectionsError !== message) {
+      toast(message, 'warn');
+    }
+
+    LIVE.connectionsError = message;
+
+  } finally {
+    LIVE.connectionsLoading = false;
+    renderUserHeader();
+
+    if (currentPage === 'matches' ||
+        currentPage === 'network' ||
+        currentPage === 'market') {
+      render();
+    }
+  }
+}
+
+async function loadLearningData() {
+  const generation = ++learningLoadGeneration;
+  const api = window.AXANH_LIVE_API;
+  if (!api?.getLearningData) {
+    LIVE.learning.error = 'Chưa kết nối API lịch học.';
+    LIVE.learning.sessions = [];
+    LIVE.learning.availableConnections = [];
+    if (currentPage === 'schedule') render();
+    return;
+  }
+  LIVE.learning.loading = true;
+  LIVE.learning.error = '';
+  if (currentPage === 'schedule') render();
+  try {
+    const data = await api.getLearningData();
+    if (generation !== learningLoadGeneration) return;
+    LIVE.learning.sessions = Array.isArray(data.items) ? data.items : [];
+    LIVE.learning.availableConnections = Array.isArray(data.availableConnections) ? data.availableConnections : [];
+    LIVE.learning.reportOptions = data.reportOptions || LIVE.learning.reportOptions;
+  } catch (err) {
+    if (generation !== learningLoadGeneration) return;
+    LIVE.learning.error = err.message || 'Không thể tải lịch học từ Lark Base.';
+    LIVE.learning.sessions = [];
+    LIVE.learning.availableConnections = [];
+  } finally {
+    if (generation === learningLoadGeneration) {
+      LIVE.learning.loading = false;
+      if (currentPage === 'schedule') render();
+    }
+  }
+}
+
+function resetLearningData() {
+  learningLoadGeneration += 1;
+  LIVE.learning = { loading: false, error: '', sessions: [], availableConnections: [], reportOptions: { applied: [], formats: [] } };
+}
+
+// Polling định kỳ mỗi 45s để cập nhật chuông thông báo
+if (!window.__notifIntervalSet) {
+  window.__notifIntervalSet = true;
+  setInterval(async () => {
+    if (!LIVE.currentUser || !window.AXANH_LIVE_API?.getNotificationsCount) return;
+    try {
+      const n = await window.AXANH_LIVE_API.getNotificationsCount();
+      const newCount = n.pendingCount;
+      LIVE.notificationsError = '';
+      if (newCount !== LIVE.notificationCount) {
+        LIVE.notificationCount = newCount;
+        renderUserHeader();
+        if (currentPage === 'matches') {
+          loadLiveConnections();
+        }
+      }
+    } catch (err) {
+      const message = 'Không thể cập nhật số thông báo.';
+      console.warn('[Notifications] Refresh failed:', err);
+
+      if (LIVE.notificationsError !== message) {
+        toast(message, 'warn');
+      }
+
+      LIVE.notificationsError = message;
+    }
+  }, 45000);
+}
+
+async function loadLiveBooths(forcSync = false) {
+  if (!window.AXANH_LIVE_API || !window.AXANH_LIVE_API.getBooths) return;
+  LIVE.boothsLoading = true;
+  LIVE.boothsError = '';
+  if (currentPage === 'home' || currentPage === 'market' || currentPage === 'network') render();
+  try {
+    let result;
+    if (forcSync && window.AXANH_LIVE_API.syncBooths) {
+      // Gọi sync để backend force-fetch từ Lark Base bỏ qua cache
+      result = await window.AXANH_LIVE_API.syncBooths();
+      LIVE.booths = Array.isArray(result?.items) ? result.items : [];
+    } else {
+      const items = await window.AXANH_LIVE_API.getBooths();
+      LIVE.booths = Array.isArray(items) ? items : [];
+    }
+  } catch (err) {
+    LIVE.boothsError = err instanceof Error ? err.message : 'Không tải được gian hàng.';
+    LIVE.booths = [];
+  } finally {
+    LIVE.boothsLoading = false;
+    if (currentPage === 'home' || currentPage === 'market' || currentPage === 'network') render();
+  }
+}
+
+function render() {
+  const logoEl = document.querySelector("#brandLogo");
+  if (logoEl) logoEl.src = SEED.navyLogo;
+  renderNav();
+  const topCat = document.querySelector('#topCategory');
+  const topTit = document.querySelector('#topTitle');
+  if (topCat) topCat.textContent = PAGE_LABELS[currentPage][0];
+  if (topTit) topTit.textContent = PAGE_LABELS[currentPage][1];
+  const viewEl = document.querySelector('#view');
+  if (viewEl) {
+    let body = { home, villages: liveVillagesPage, members: liveMembersPage, market, matches, network, schedule, library, awards: honors, gate1, forms, settings }[currentPage]();
+    viewEl.innerHTML = body + footer();
+  }
+  const sidebar = document.querySelector('#sidebar');
+  if (sidebar) sidebar.classList.remove('show');
+  renderUserHeader();
+}
+function openModal(title, body, footer = '') { const root = document.querySelector('#modal'); root.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-head"><div><div class="eyebrow">ATED PRO · PHIÊN CHỢ TRI THỨC</div><h2 id="modalTitle">' + title + '</h2></div><button class="modal-close" data-action="close-modal" aria-label="Đóng">' + icon('close', 18) + '</button></div><div class="modal-body">' + body + '</div>' + (footer ? '<div class="modal-foot">' + footer + '</div>' : '') + '</div>'; root.classList.add('open'); document.body.style.overflow = 'hidden' }
+function closeModal() { document.querySelector('#modal').classList.remove('open'); document.querySelector('#modal').innerHTML = ''; document.body.style.overflow = '' }
+function openPeerBoothModal(peerId, connId) {
+  const member = (LIVE.members || []).find(m => m.id === peerId || m.memberId === peerId);
+  const connection = (LIVE.connections || []).find(c =>
+    c.connectionType === 'personal' &&
+    (c.connectionId === connId || c.recordId === connId || c.id === connId)
+  );
+  if (!connection) {
+    openModal(
+      'Gian hàng tri thức',
+      '<div class="empty"><b>Không tìm thấy kết nối này</b><p>Vui lòng làm mới dữ liệu kết nối rồi thử lại.</p></div>',
+      '<button class="btn" data-action="close-modal">Đóng</button>'
+    );
+    return;
+  }
+
+  const sourceMemberId = connection.sourceBooth?.authorMemberId || connection.requestedBy;
+  const targetMemberId = connection.targetBooth?.authorMemberId || connection.targetMemberId;
+  const isSourceBooth = sourceMemberId === peerId;
+  const peerBooth = isSourceBooth
+    ? connection.sourceBooth
+    : targetMemberId === peerId
+      ? connection.targetBooth
+      : connection.requestedBy === LIVE.currentUser?.memberId
+        ? connection.targetBooth
+        : connection.sourceBooth;
+  const boothRecordId = isSourceBooth ? connection.sourceBoothRecordId : connection.targetBoothRecordId;
+  const fullBooth = (LIVE.booths || []).find(b =>
+    (peerBooth?.recordId && b.recordId === peerBooth.recordId) ||
+    (peerBooth?.boothId && b.boothId === peerBooth.boothId) ||
+    (boothRecordId && b.recordId === boothRecordId)
+  );
+  const booth = peerBooth || fullBooth ? { ...(peerBooth || {}), ...(fullBooth || {}) } : null;
+  const peerName = booth?.authorName || member?.name || 'Thành viên';
+
+  if (!booth) {
+    openModal(
+      'Gian hàng tri thức · ' + esc(peerName),
+      '<div class="empty"><b>Chưa có thông tin gian hàng trong kết nối này</b><p>Không tìm thấy gian hàng tri thức đã được dùng để tạo kết nối.</p></div>',
+      '<button class="btn" data-action="close-modal">Đóng</button>'
+    );
+    return;
+  }
+
+  const villageName = booth.authorVillageName || booth.villageName || member?.villageName || 'Chưa xác định';
+  const village = (LIVE.villages || []).find(v =>
+    (booth.villageId && v.id === booth.villageId) || v.name === villageName
+  );
+  const offerTopics = Array.isArray(booth.offerTags) ? booth.offerTags : [booth.offerTopic || booth.offerTag];
+  const body = '<div class="person-head" style="margin-bottom:20px">'
+    + villageLogoHtml(booth.villageIconUrl || village?.iconUrl, villageName, 72)
+    + '<div><b style="font-size:16px">' + esc(villageName) + '</b><small>'
+    + esc(booth.authorOffice || member?.office || '—') + ' · Hồ sơ minh họa'
+    + '</small></div></div>'
+    + '<div class="note">Thông tin bên dưới lấy từ gian hàng tri thức được dùng để tạo kết nối này.</div>'
+    + '<div class="kv"><span>Có thể chia sẻ</span><b>' + esc(booth.offer || 'Chưa cập nhật') + '</b></div>'
+    + '<div class="kv"><span>Chủ đề</span><b>' + esc(offerTopics.filter(Boolean).join(' · ') || 'Chưa cập nhật') + '</b></div>'
+    + '<div class="kv"><span>Muốn học</span><b>' + esc(booth.need || 'Chưa cập nhật') + '</b></div>';
+  openModal(
+    esc(peerName),
+    body,
+    '<button class="btn" data-action="close-modal">Đóng</button>'
+  );
+}
+function profileModal(id) { const p = person(id); if (!p) return; openModal(esc(p.name), '<div class="person-head" style="margin-bottom:22px">' + pic(p, 72) + '<div><b style="font-size:16px">' + esc(p.village) + '</b><small>' + esc(p.office) + ' · ' + (p.confirmed ? 'Tự khai' : 'Hồ sơ minh họa') + '</small></div></div><div class="note">Kỹ năng và nhu cầu hiển thị là ví dụ thiết kế; chưa được người tham gia xác nhận. Không dùng làm cơ sở đánh giá cá nhân.</div><div class="kv"><span>Có thể chia sẻ</span><b>' + esc(p.offer) + '</b></div><div class="kv"><span>Chủ đề</span><b>' + esc((p.offerTags || []).join(' · ')) + '</b></div><div class="kv"><span>Muốn học</span><b>' + esc(p.need) + '</b></div><div class="kv"><span>Thời gian gợi ý</span><b>' + esc(p.availability.join(' · ')) + '</b></div>', '<button class="btn" data-action="close-modal">Đóng</button><button class="btn btn-primary" data-action="choose-seeker" data-id="' + p.id + '">Tìm người phù hợp</button>') }
+function openLarkFormModal(type) {
+  const isReg = type === 'registration';
+  const title = isReg ? 'Form 01 · Đăng ký trao / nhận tri thức' : 'Form 02 · Báo cáo kết quả hỗ trợ';
+  const url = STATE.settings[isReg ? 'registrationUrl' : 'resultUrl'];
+  if (!validLink(url)) {
+    toast('Chưa cấu hình URL biểu mẫu Lark cho form này.', 'warn');
+    navigate('settings');
+    return;
+  }
+  const root = document.querySelector('#modal');
+  root.innerHTML = '<div class="modal modal-lark" role="dialog" aria-modal="true" aria-labelledby="modalTitle">'
+    + '  <div class="modal-head">'
+    + '    <div class="modal-lark-title-wrap">'
+    + '      <div class="eyebrow">LARK BASE FORM NHÚNG TRỰC TIẾP</div>'
+    + '      <h2 id="modalTitle">' + esc(title) + '</h2>'
+    + '    </div>'
+    + '    <div class="modal-lark-actions">'
+    + '      <a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" class="btn small btn-primary" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">'
+    +          icon('external', 14) + ' Mở trên Lark'
+    + '      </a>'
+    + '      <button class="modal-close" data-action="close-modal" aria-label="Đóng">' + icon('close', 18) + '</button>'
+    + '    </div>'
+    + '  </div>'
+    + '  <div class="lark-fallback-bar">'
+    + '    <span>ℹ️ Nếu biểu mẫu không hiển thị do chính sách bảo mật của Lark/trình duyệt, hãy nhấn nút <b>Mở trên Lark</b> để điền trực tiếp.</span>'
+    + '    <a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" style="color:#92400e;font-weight:700;text-decoration:underline">Mở tab mới ↗</a>'
+    + '  </div>'
+    + '  <div class="modal-body">'
+    + '    <div class="lark-iframe-container">'
+    + '      <div class="lark-iframe-loader" id="larkLoader">'
+    + '        <div class="lark-spinner"></div>'
+    + '        <span>Đang tải biểu mẫu từ Lark Base...</span>'
+    + '      </div>'
+    + '      <iframe class="lark-iframe" src="' + esc(url) + '" allow="camera; microphone; clipboard-write" onload="const el = document.getElementById(\'larkLoader\'); if(el) el.classList.add(\'hidden\');"></iframe>'
+    + '    </div>'
+    + '  </div>'
+    + '</div>';
+  root.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function renderRegistrationBanner(type) {
+  const u = LIVE.currentUser;
+  if (!u) {
+    return {
+      html: '<div class="status-banner" style="margin-bottom:16px">⚠️ Chưa xác định được phiên đăng nhập. Vui lòng đăng xuất và đăng nhập lại.</div>',
+      canSubmit: false,
+    };
+  }
+
+  if (type === 'village') {
+    const v = (LIVE.villages || []).find(x => (u.villageId && x.id === u.villageId) || (u.villageName && x.name === u.villageName));
+    const villageId = u.villageId || v?.id;
+    const villageName = u.villageName || v?.name;
+    const office = u.office || v?.office || '—';
+
+    if (!villageId || !villageName || villageName === 'Chưa xác định') {
+      return {
+        html: '<div style="display:flex;align-items:flex-start;gap:14px;background:#fff1f2;border:1px solid #fecdd3;border-radius:12px;padding:14px 18px;margin-bottom:18px;color:#be123c">'
+          + '<div style="font-size:24px;line-height:1">⚠️</div>'
+          + '<div>'
+          + '<div style="font-weight:800;font-size:14px;color:#9f1239">Không thể mở gian hàng cấp Làng</div>'
+          + '<div style="font-size:12px;line-height:1.6;margin-top:2px;color:#4c0519">Tài khoản <b>' + esc(u.name || 'Thành viên') + '</b> chưa được liên kết với Làng nào trong danh bạ 11 Làng (T01_Villages). Chỉ thành viên có làng trực thuộc mới có thể mở gian hàng cho Làng.</div>'
+          + '</div></div>',
+        canSubmit: false,
+      };
+    }
+
+    const logoUrl = v?.iconUrl || (villageId ? '/api/v1/villages/' + encodeURIComponent(villageId) + '/icon' : null);
+    const logoHtml = logoUrl
+      ? '<img src="' + esc(logoUrl) + '" alt="' + esc(villageName) + '" style="width:52px;height:52px;object-fit:contain;border-radius:12px;background:#fff;padding:4px;border:1px solid #bfdbfe;display:block" onerror="this.style.display=\'none\';">'
+      : '<div style="width:52px;height:52px;border-radius:12px;background:#dbeafe;color:#1e40af;display:grid;place-items:center;font-weight:800;font-size:18px;border:1px solid #bfdbfe">🏛️</div>';
+
+    return {
+      html: '<div style="display:flex;align-items:center;gap:14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px 18px;margin-bottom:18px">'
+        + '<div style="flex-shrink:0">' + logoHtml + '</div>'
+        + '<div>'
+        + '<div style="font-weight:800;font-size:15px;color:#1e3a8a">' + esc(villageName) + ' <span style="font-size:11px;font-weight:600;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:6px;margin-left:6px">GIAN HÀNG LÀNG</span></div>'
+        + '<div style="font-size:12px;color:#475569;line-height:1.6">Văn phòng: ' + esc(office) + ' · Đại diện đăng ký: <b style="color:#0f172a">' + esc(u.name || 'Bạn') + '</b></div>'
+        + '<span style="display:inline-block;margin-top:4px;font-size:11px;background:#2563eb;color:#fff;padding:2px 10px;border-radius:99px;font-weight:600">● Đại diện Làng · Lưu vào Lark Base với Booth_Type = Làng</span>'
+        + '</div></div>',
+      canSubmit: true,
+    };
+  }
+
+  // Personal banner
+  const avatarHtml = u.avatarUrl
+    ? '<img src="' + esc(u.avatarUrl) + '" alt="avatar" style="width:52px;height:52px;border-radius:50%;object-fit:cover;display:block" onerror="this.style.display=\'none\';">'
+    : '<div style="width:52px;height:52px;border-radius:50%;background:#1a3a6e;display:grid;place-items:center;color:#fff;font-weight:700;font-size:20px">' + esc((u.name || 'AX')[0].toUpperCase()) + '</div>';
+
+  return {
+    html: '<div style="display:flex;align-items:center;gap:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px 18px;margin-bottom:18px">'
+      + '<div style="flex-shrink:0">' + avatarHtml + '</div>'
+      + '<div>'
+      + '<div style="font-weight:800;font-size:14.5px;color:#061b3e">' + esc(u.name || 'Thành viên') + ' <span style="font-size:11px;font-weight:600;background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:6px;margin-left:6px">CÁ NHÂN</span></div>'
+      + '<div style="font-size:12px;color:#657d95;line-height:1.6">' + esc(u.villageName || u.village || '—') + ' · ' + esc(u.office || '—') + '</div>'
+      + '<span style="display:inline-block;margin-top:5px;font-size:11px;background:#1a7f5a;color:#fff;padding:2px 10px;border-radius:99px;font-weight:600">● Hồ sơ cá nhân của bạn · đã xác thực Email OTP</span>'
+      + '</div></div>',
+    canSubmit: true,
+  };
+}
+
+window.handleBoothTypeChange = function(type) {
+  const bannerWrap = document.getElementById('boothTypeBannerWrap');
+  const bannerInfo = renderRegistrationBanner(type);
+  if (bannerWrap) bannerWrap.innerHTML = bannerInfo.html;
+
+  const submitBtn = document.getElementById('registrationSubmitBtn');
+  if (submitBtn) {
+    submitBtn.disabled = !bannerInfo.canSubmit;
+    submitBtn.innerHTML = type === 'village'
+      ? (icon('check') + ' Đăng ký gian hàng cho Làng')
+      : (icon('check') + ' Đăng ký gian hàng');
+  }
+
+  const isVillage = type === 'village';
+  const lblOffer = document.getElementById('lblOffer');
+  const lblOfferTag = document.getElementById('lblOfferTag');
+  const lblNeed = document.getElementById('lblNeed');
+  const lblNeedTag = document.getElementById('lblNeedTag');
+  const lblConsent = document.getElementById('lblConsent');
+  const offerInput = document.querySelector('input[name="offer"]');
+  const needInput = document.querySelector('input[name="need"]');
+
+  if (lblOffer) lblOffer.innerHTML = (isVillage ? 'Điều Làng có thể chia sẻ' : 'Điều bạn có thể chia sẻ') + ' <span style="color:#e11d48">*</span>';
+  if (lblOfferTag) lblOfferTag.innerHTML = (isVillage ? 'Chủ đề Làng chia sẻ' : 'Chủ đề chia sẻ') + ' <span style="color:#e11d48">*</span>';
+  if (lblNeed) lblNeed.innerHTML = (isVillage ? 'Điều Làng muốn học' : 'Điều bạn muốn học') + ' <span style="color:#e11d48">*</span>';
+  if (lblNeedTag) lblNeedTag.innerHTML = (isVillage ? 'Chủ đề Làng muốn học' : 'Chủ đề muốn học') + ' <span style="color:#e11d48">*</span>';
+  if (lblConsent) lblConsent.textContent = isVillage
+    ? 'Tôi xác nhận đại diện Làng đăng ký thông tin kỹ năng và nhu cầu này để kết nối trong nội bộ AXANH.'
+    : 'Tôi đồng ý cho hiển thị thông tin kỹ năng và nhu cầu trong phạm vi nội bộ AXANH.';
+  if (offerInput) offerInput.placeholder = isVillage
+    ? 'Ví dụ: Làng Lửa đào tạo QA/QC bản vẽ, quy trình nghiệm thu nội bộ...'
+    : 'Ví dụ: Kiểm tra bản vẽ trước khi phát hành, dùng AI để soạn thảo nhanh...';
+  if (needInput) needInput.placeholder = isVillage
+    ? 'Ví dụ: Làng Lửa mong muốn học hỏi về AI & Automation, Civil 3D chuyên sâu...'
+    : 'Ví dụ: Làm việc với AI, kỹ năng thuyết trình...';
+};
+
+function openRegistrationForm(defaultType = 'personal') {
+  const chosenType = defaultType === 'village' ? 'village' : 'personal';
+  const u = LIVE.currentUser;
+  const tags = ['QA/QC', 'SOP', 'Civil 3D', 'AI', 'Automation', 'Tiếng Anh', 'Giao tiếp', 'Lãnh đạo', 'Đào tạo', 'Mentoring', 'Ưu tiên', 'Quản lý dự án', 'Coaching', 'ATED'];
+  const formats = [
+    { v: '💬 Trao đổi 1-1', l: '💬 Trao đổi 1-1' },
+    { v: '👥 Nhóm nhỏ', l: '👥 Nhóm nhỏ' },
+    { v: '🖥️ Demo trực tiếp', l: '🖥️ Demo trực tiếp' },
+    { v: '🧪 Thực hành cùng nhau', l: '🧪 Thực hành cùng nhau' },
+    { v: '📄 Chia sẻ tài liệu / hướng dẫn', l: '📄 Chia sẻ tài liệu / hướng dẫn' },
+  ];
+
+  const typeSelector = '<div style="margin-bottom:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px 16px">'
+    + '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px">1. Chọn loại gian hàng bạn muốn đăng ký</div>'
+    + '<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">'
+    + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:14px;color:#0f172a">'
+    + '<input type="radio" name="boothType" value="personal" ' + (chosenType === 'personal' ? 'checked' : '') + ' onchange="window.handleBoothTypeChange(\'personal\')" style="accent-color:#1a7f5a;width:17px;height:17px">'
+    + '<span>👤 Gian hàng Cá nhân</span>'
+    + '</label>'
+    + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:14px;color:#0f172a">'
+    + '<input type="radio" name="boothType" value="village" ' + (chosenType === 'village' ? 'checked' : '') + ' onchange="window.handleBoothTypeChange(\'village\')" style="accent-color:#2563eb;width:17px;height:17px">'
+    + '<span>🏛️ Gian hàng Làng</span>'
+    + '</label>'
+    + '</div>'
+    + '</div>';
+
+  const initialBanner = renderRegistrationBanner(chosenType);
+  const isVillage = chosenType === 'village';
+
+  openModal('Form 01 · Mở gian hàng tri thức',
+    '<form id="registrationForm" class="settings-form">'
+    + typeSelector
+    + '<div id="boothTypeBannerWrap">' + initialBanner.html + '</div>'
+    + '<div class="field-grid">'
+    + '<div class="field"><label id="lblOffer">' + (isVillage ? 'Điều Làng có thể chia sẻ' : 'Điều bạn có thể chia sẻ') + ' <span style="color:#e11d48">*</span></label><input name="offer" required maxlength="500" placeholder="' + (isVillage ? 'Ví dụ: Làng Lửa đào tạo QA/QC bản vẽ, quy trình nghiệm thu nội bộ...' : 'Ví dụ: Kiểm tra bản vẽ trước khi phát hành, dùng AI để soạn thảo nhanh...') + '"/></div>'
+    + '<div class="field"><label id="lblOfferTag">' + (isVillage ? 'Chủ đề Làng chia sẻ' : 'Chủ đề chia sẻ') + ' <span style="color:#e11d48">*</span></label><select name="offerTag" required><option value="">Chọn chủ đề</option>' + tags.map(t => '<option>' + esc(t) + '</option>').join('') + '</select></div>'
+    + '</div>'
+    + '<div class="field-grid">'
+    + '<div class="field"><label id="lblNeed">' + (isVillage ? 'Điều Làng muốn học' : 'Điều bạn muốn học') + ' <span style="color:#e11d48">*</span></label><input name="need" required maxlength="500" placeholder="' + (isVillage ? 'Ví dụ: Làng Lửa mong muốn học hỏi về AI & Automation...' : 'Ví dụ: Làm việc với AI, kỹ năng thuyết trình...') + '"/></div>'
+    + '<div class="field"><label id="lblNeedTag">' + (isVillage ? 'Chủ đề Làng muốn học' : 'Chủ đề muốn học') + ' <span style="color:#e11d48">*</span></label><select name="needTag" required><option value="">Chọn chủ đề</option>' + tags.map(t => '<option>' + esc(t) + '</option>').join('') + '</select></div>'
+    + '</div>'
+    + '<div class="field"><label>Hình thức mong muốn</label><select name="preferredFormat"><option value="">Không xác định</option>' + formats.map(f => '<option value="' + esc(f.v) + '">' + esc(f.l) + '</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Kết quả mong muốn sau buổi hỗ trợ</label><textarea name="outcome" placeholder="Sau buổi này, tôi muốn có thể..."></textarea></div>'
+    + '<label class="checkline"><input type="checkbox" name="consent" checked><span id="lblConsent">' + (isVillage ? 'Tôi xác nhận đại diện Làng đăng ký thông tin kỹ năng và nhu cầu này để kết nối trong nội bộ AXANH.' : 'Tôi đồng ý cho hiển thị thông tin kỹ năng và nhu cầu trong phạm vi nội bộ AXANH.') + '</span></label>'
+    + '<div id="registrationFormStatus" style="margin-bottom:8px;min-height:20px"></div>'
+    + '<button type="submit" class="btn btn-primary" id="registrationSubmitBtn" ' + (initialBanner.canSubmit ? '' : 'disabled') + '>' + icon('check') + (isVillage ? ' Đăng ký gian hàng cho Làng' : ' Đăng ký gian hàng') + '</button>'
+    + '</form>'
+  );
+}
+function externalForm(type) { const url = STATE.settings[type === 'registration' ? 'registrationUrl' : 'resultUrl']; if (!validLink(url)) { toast('Chưa cấu hình URL Lark Form thật.', 'warn'); navigate('settings'); return } window.open(url, '_blank', 'noopener,noreferrer') }
+function addToastSettings() { toast('Đã lưu đường dẫn trên trình duyệt. Chưa có kết nối API tự động.') }
+
+function launchFireworks({ bursts = 7 } = {}) { const canvas = document.getElementById('fxCanvas'); if (!canvas) return; const ctx = canvas.getContext('2d'); canvas.width = window.innerWidth * devicePixelRatio; canvas.height = window.innerHeight * devicePixelRatio; canvas.style.width = window.innerWidth + 'px'; canvas.style.height = window.innerHeight + 'px'; canvas.style.background = 'rgba(3,10,30,.72)'; canvas.style.backdropFilter = 'blur(1px)'; ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); const w = window.innerWidth, h = window.innerHeight; const palette = ['#ffd34f', '#ff6b7a', '#5ee7df', '#8ac6ff', '#ffffff', '#f59e0b']; const particles = []; const burstsArr = []; for (let i = 0; i < bursts; i++) { burstsArr.push({ x: Math.random() * w * 0.82 + w * 0.09, y: Math.random() * h * 0.42 + h * 0.08, delay: i * 130 }) } const start = performance.now(); function spawn(b) { for (let i = 0; i < 42; i++) { const ang = Math.random() * Math.PI * 2, speed = 1.5 + Math.random() * 5.5; particles.push({ x: b.x, y: b.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, g: .055 + Math.random() * .03, life: 48 + Math.random() * 28, size: 2 + Math.random() * 2.8, color: palette[(Math.random() * palette.length) | 0] }) } } function frame(t) { ctx.clearRect(0, 0, w, h); burstsArr.forEach(b => { if (!b.done && t - start > b.delay) { spawn(b); b.done = true } }); for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.x += p.vx; p.y += p.vy; p.vy += p.g; p.life -= 1; if (p.life <= 0) { particles.splice(i, 1); continue } ctx.globalAlpha = Math.max(.08, p.life / 80); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); if (p.life > 18) { ctx.strokeStyle = p.color; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.2, p.y - p.vy * 2.2); ctx.stroke(); } } ctx.globalAlpha = 1; if (particles.length || burstsArr.some(b => !b.done)) { requestAnimationFrame(frame) } else { ctx.clearRect(0, 0, w, h); canvas.style.background = 'transparent'; canvas.style.backdropFilter = 'none'; } } requestAnimationFrame(frame) }
+window.addEventListener('resize', () => { const canvas = document.getElementById('fxCanvas'); if (canvas) { canvas.width = window.innerWidth * devicePixelRatio; canvas.height = window.innerHeight * devicePixelRatio; canvas.style.width = window.innerWidth + 'px'; canvas.style.height = window.innerHeight + 'px'; } });
+
+const ApiAdapter = { mode: 'live-readonly', async listPeople() { return getPeople() }, async listVillages() { return LIVE.villages }, async listMembers() { return LIVE.members }, async listConnections() { return LIVE.connections }, async readFromLarkBackend() { return window.AXANH_LIVE_API.load() } };
+window.AXANH_KEX_ADAPTER = ApiAdapter;
+
+// ===== CLICK HANDLER (thêm toggle-user-menu + my-profile) =====
+window.addEventListener('click', e => {
+  // Đóng dropdown khi click ra ngoài
+  const dropdown = document.getElementById('userDropdown');
+  const menuWrap = e.target.closest('.user-menu-wrap');
+  if (dropdown && dropdown.classList.contains('open') && !menuWrap) {
+    dropdown.classList.remove('open');
+    const btn = document.querySelector('.user-avatar-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
+  if (e.target.id === 'modal') { closeModal(); return }
+  const b = e.target.closest('[data-action]');
+  if (!b) return;
+  const a = b.dataset.action, id = b.dataset.id;
+  switch (a) {
+    case 'nav': navigate(b.dataset.page); break;
+    case 'open-village-market': marketTab = 'village'; navigate('market'); break;
+    case 'forms': navigate('forms'); break;
+    case 'settings': navigate('settings'); break;
+    case 'mobile-menu': document.querySelector('#sidebar').classList.toggle('show'); break;
+    case 'profile': profileModal(id); break;
+    case 'open-village-connections': openVillageConnectionsModal(id); break;
+    case 'toggle-user-menu': {
+      const dd = document.getElementById('userDropdown');
+      const avatarBtn = b;
+      if (!dd) break;
+      const isOpen = dd.classList.toggle('open');
+      avatarBtn.setAttribute('aria-expanded', String(isOpen));
+      break;
+    }
+    case 'my-profile': {
+      const dd = document.getElementById('userDropdown');
+      if (dd) dd.classList.remove('open');
+      openMyProfileModal();
+      break;
+    }
+    case 're-login':
+      closeModal();
+      LIVE.currentUser = null;
+      clearGate1Data();
+      resetLearningData();
+      knowledgeLoadGeneration += 1;
+      honorsLoadGeneration += 1;
+      LIVE.knowledge = { loading: false, error: '', items: [], diagnostics: {} };
+      LIVE.honors = { loading: false, error: '', data: null };
+      showAuthScreen('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      break;
+    case 'logout':
+      if (window.AXANH_LIVE_API && window.AXANH_LIVE_API.logout) {
+        window.AXANH_LIVE_API.logout();
+      }
+      break;
+    case 'live-refresh': loadLiveData(); break;
+    case 'refresh-booths': loadLiveBooths(true); break;
+    case 'learning-create': openLearningScheduleModal(); break;
+    case 'learning-refresh': loadLearningData(); break;
+    case 'knowledge-refresh': loadKnowledge(); break;
+    case 'honors-refresh': loadHonors(true); break;
+    case 'knowledge-detail': openKnowledgeDetail(id); break;
+    case 'learning-respond': {
+      b.disabled = true;
+      window.AXANH_LIVE_API.respondLearningSession(id, b.dataset.decision)
+        .then(() => {
+          toast(b.dataset.decision === 'accept' ? 'Đã xác nhận lịch học.' : b.dataset.decision === 'reject' ? 'Đã từ chối lịch; trạng thái được lưu là Cancelled.' : 'Đã hủy đề xuất lịch.');
+          closeModal();
+          return loadLearningData();
+        })
+        .catch(err => {
+          toast(err.message || 'Không thể cập nhật lịch học.', 'warn');
+          b.disabled = false;
+        });
+      break;
+    }
+    case 'learning-complete': {
+      b.disabled = true;
+      window.AXANH_LIVE_API.completeLearningSession(id)
+        .then(() => {
+          toast('Đã xác nhận buổi học hoàn thành.');
+          return loadLearningData();
+        })
+        .catch(err => {
+          toast(err.message || 'Không thể xác nhận hoàn thành.', 'warn');
+          b.disabled = false;
+        });
+      break;
+    }
+    case 'learning-report': {
+      const session = LIVE.learning.sessions.find(item => item.id === id);
+      if (session) openLearningReportForm(session);
+      break;
+    }
+    case 'learning-results': {
+      const session = LIVE.learning.sessions.find(item => item.id === id);
+      if (session) openLearningResults(session);
+      break;
+    }
+    case 'set-market-tab': marketTab = b.dataset.tab || 'personal'; render(); break;
+    case 'close-modal': closeModal(); break;
+    case 'choose-seeker': STATE.seeker = id; persist(); closeModal(); navigate('matches'); break;
+    case 'open-lark-form': openLarkFormModal(b.dataset.form); break;
+    case 'hero-open-form':
+      if (STATE.settings.registrationUrl) {
+        openLarkFormModal('registration');
+      } else {
+        openRegistrationForm(marketTab || 'personal');
+      }
+      break;
+    case 'open-form': if (b.dataset.form === 'registration') openRegistrationForm(b.dataset.defaultType || marketTab || 'personal'); break;
+    case 'external-form': externalForm(b.dataset.form); break;
+    case 'set-live-match-mode':
+      MATCHING.mode = b.dataset.mode || 'personal';
+      MATCHING.selectedBoothId = null;
+      loadMatching(true);
+      break;
+    case 'view-match-detail':
+      showMatchDetailModal(Number(b.dataset.idx));
+      break;
+    case 'open-peer-node': {
+      const peerId = b.dataset.id;
+      openPeerBoothModal(peerId, b.dataset.connId);
+      break;
+    }
+    case 'create-live-match':
+      createLiveMatch(Number(b.dataset.idx));
+      break;
+    case 'toggle-notifications':
+      showNotificationsModal();
+      break;
+    case 'set-conn-tab':
+      connectionsActiveTab = b.dataset.tab || 'inbox';
+      if (currentPage === 'matches') render();
+      break;
+    case 'refresh-connections': {
+      b.disabled = true;
+      loadLiveConnections().then(() => {
+        toast('Đã đồng bộ kết nối mới nhất từ Lark Base.');
+        b.disabled = false;
+        if (currentPage === 'matches') render();
+      });
+      break;
+    }
+    case 'respond-connection': {
+      const connId = b.dataset.id;
+      const decision = b.dataset.decision;
+      b.disabled = true;
+      window.AXANH_LIVE_API.respondConnection(connId, { decision })
+        .then(() => {
+          toast(decision === 'Accepted' ? 'Đã đồng ý kết nối thành công!' : 'Đã từ chối lời mời kết nối.', 'success');
+          return loadLiveConnections();
+        })
+        .then(() => {
+          closeModal();
+          render();
+        })
+        .catch(err => {
+          toast(err.message || 'Lỗi xử lý xác nhận.', 'error');
+          b.disabled = false;
+        });
+      break;
+    }
+    case 'cancel-connection': {
+      const connId = b.dataset.id;
+      b.disabled = true;
+      window.AXANH_LIVE_API.cancelConnection(connId)
+        .then(() => {
+          toast('Đã hủy lời mời kết nối thành công.');
+          return loadLiveConnections();
+        })
+        .then(() => {
+          closeModal();
+          render();
+        })
+        .catch(err => {
+          toast(err.message || 'Lỗi hủy lời mời.', 'error');
+          b.disabled = false;
+        });
+      break;
+    }
+    case 'set-network-mode':
+      liveNetworkMode = b.dataset.mode || 'village';
+      liveNetworkVillageFilter = 'all';
+      if (currentPage === 'network') render();
+      break;
+    case 'filter-net-village':
+      liveNetworkVillageFilter = b.dataset.village || 'all';
+      if (currentPage === 'network') render();
+      break;
+    case 'open-member-node': {
+      const mem = (LIVE.members || []).find(m => m.id === id);
+      if (mem) {
+        const avHtml = memberAvatarHtml(mem.avatarUrl, mem.name, 60);
+        openModal(esc(mem.name || 'Thành viên'), avHtml
+          + '<div class="kv"><span>Làng</span><b>' + esc(mem.villageName || '—') + '</b></div>'
+          + '<div class="kv"><span>Văn phòng</span><b>' + esc(mem.office || '—') + '</b></div>'
+          + '<div class="kv"><span>Vai trò</span><b>' + esc(mem.programRole || '—') + '</b></div>',
+          '<button class="btn" data-action="close-modal">Đóng</button>');
+      }
+      break;
+    }
+    case 'retry-matching':
+      loadMatching();
+      break;
+    case 'set-match-mode': STATE.matchMode = b.dataset.mode || 'person'; persist(); render(); break;
+    case 'open-base': if (validLink(STATE.settings.larkBase)) window.open(STATE.settings.larkBase, '_blank', 'noopener,noreferrer'); break;
+    case 'gate-open': openGateDetail(id); break;
+    case 'gate-fireworks': {
+      const item = GATE1.items.find(entry => entry.villageId === id);
+      if (!item || gateStatusMeta(item.status)[1] !== 'passed') break;
+      launchFireworks({ bursts: 12 });
+      toast('Chúc mừng ' + item.villageName + ' đạt Gate 1!');
+      break;
+    }
+    case 'gate-global-fireworks': launchFireworks({ bursts: 12 }); toast('Chúc cả hành trình Phiên chợ tri thức thật rực rỡ!'); break;
+  }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'knowledgeConnectionFilter') {
+    libraryConnectionFilter = e.target.value;
+    refreshKnowledgeResults();
+  }
+  if (e.target.id === 'knowledgeAppliedFilter') {
+    libraryAppliedFilter = e.target.value;
+    refreshKnowledgeResults();
+  }
+  if (e.target.id === 'matchingMemberSelect') {
+    MATCHING.selectedMemberId = e.target.value;
+    MATCHING.selectedBoothId = null;
+    loadMatching(true);
+  }
+  if (e.target.id === 'matchingVillageSelect') {
+    MATCHING.selectedVillageId = e.target.value;
+    MATCHING.selectedBoothId = null;
+    loadMatching(true);
+  }
+  if (e.target.id === 'matchingBoothSelect') {
+    MATCHING.selectedBoothId = e.target.value;
+    loadMatchingSuggestions();
+  }
+  if (e.target.id === 'seekerSelect') { STATE.seeker = e.target.value; persist(); render() }
+  if (e.target.id === 'villageSeekerSelect') { STATE.villageSeeker = e.target.value; persist(); render() }
+  if (e.target.id === 'officeFilter') { officeFilter = e.target.value; render() }
+  if (e.target.id === 'liveMemberOffice') { liveMemberOffice = e.target.value; render() }
+});
+document.addEventListener('input', e => { if (e.target.id === 'liveMemberSearch') { liveMemberSearch = e.target.value; const grid = document.querySelector('#liveMemberGrid'); if (grid) grid.innerHTML = liveMemberCards(); const count = document.querySelector('#liveMemberCount'); if (count) count.textContent = 'Đang hiển thị ' + matchingMembers().length + '/' + LIVE.members.length + ' thành viên'; } if (e.target.id === 'marketSearch') { marketSearch = e.target.value; if (currentPage === 'market') render(); } });
+document.addEventListener('input', e => {
+  if (e.target.id === 'knowledgeSearch') {
+    librarySearch = e.target.value;
+    refreshKnowledgeResults();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && currentPage === 'library') loadKnowledge();
+  if (!document.hidden && currentPage === 'awards') loadHonors();
+});
+document.addEventListener('submit', e => {
+  const form = e.target;
+  const formId = form.getAttribute('id');
+  if (!['learningScheduleForm', 'learningReportForm'].includes(formId)) return;
+  e.preventDefault();
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  const values = Object.fromEntries(new FormData(form).entries());
+  const request = formId === 'learningScheduleForm'
+    ? window.AXANH_LIVE_API.createLearningSession({
+        connectionId: values.connectionId,
+        title: values.title,
+        startAt: values.date + 'T' + values.startTime + ':00+07:00',
+        endAt: values.date + 'T' + values.endTime + ':00+07:00',
+        format: values.format,
+        locationOrLink: values.locationOrLink,
+      })
+    : window.AXANH_LIVE_API.submitLearningResult(form.dataset.sessionId, {
+        learned: values.learned,
+        applied: values.applied,
+        rating: Number(values.rating),
+        asset: values.asset || '',
+        outcome: values.outcome || '',
+        evidence: values.evidence || '',
+        share: form.querySelector('input[name="share"]')?.checked === true,
+      });
+  request.then(async result => {
+    const sessionId = form.dataset.sessionId;
+    closeModal();
+    await loadLearningData();
+    if (formId === 'learningScheduleForm') {
+      toast('Đã gửi đề xuất lịch học lên Lark Base.');
+      return;
+    }
+    if (result.duplicate) {
+      toast('Bạn đã gửi báo cáo cho buổi học này; đang mở báo cáo hiện có.', 'warn');
+      const session = LIVE.learning.sessions.find(item => item.id === sessionId);
+      if (session) openLearningResults(session);
+      return;
+    }
+    toast('Đã lưu Form 02 vào Lark Base.');
+  }).catch(err => {
+    toast(err.message || 'Không thể lưu dữ liệu học tập.', 'warn');
+    if (submitButton) submitButton.disabled = false;
+  });
+});
+document.addEventListener('submit', e => { const formId = e.target.getAttribute('id'); if (!['settingsForm', 'registrationForm'].includes(formId)) return; e.preventDefault(); const f = e.target; const d = Object.fromEntries(new FormData(f).entries()); if (formId === 'settingsForm') {
+    const regUrl = (d.registrationUrl || '').trim();
+    const resUrl = (d.resultUrl || '').trim();
+    const larkDomainRegex = /^https:\/\/([a-z0-9-]+\.)*(larksuite\.com|feishu\.cn)/i;
+    if (regUrl && !larkDomainRegex.test(regUrl)) {
+      toast('URL Form 01 phải là liên kết HTTPS thuộc Lark (larksuite.com hoặc feishu.cn).', 'warn');
+      return;
+    }
+    if (resUrl && !larkDomainRegex.test(resUrl)) {
+      toast('URL Form 02 phải là liên kết HTTPS thuộc Lark (larksuite.com hoặc feishu.cn).', 'warn');
+      return;
+    }
+    if (window.AXANH_LIVE_API && window.AXANH_LIVE_API.updateFormsConfig) {
+      window.AXANH_LIVE_API.updateFormsConfig({
+        form01Url: regUrl,
+        form02Url: resUrl,
+      }).then(() => {
+        STATE.settings.registrationUrl = regUrl;
+        STATE.settings.resultUrl = resUrl;
+        STATE.settings.larkBase = (d.larkBase || '').trim();
+        persist();
+        toast('Đã lưu cấu hình biểu mẫu Lark thành công vào hệ thống!');
+        render();
+      }).catch((err) => {
+        toast(err.message || 'Lỗi khi lưu cấu hình lên máy chủ.', 'warn');
+      });
+    } else {
+      toast('Không thể lưu cấu hình vì Backend chưa sẵn sàng. Vui lòng thử lại.', 'warn');
+    }
+    return;
+  } if (formId === 'registrationForm') {
+    // Gửi lên Lark Base qua API thật
+    if (!window.AXANH_LIVE_API || !window.AXANH_LIVE_API.createBooth) {
+      toast('Chưa kết nối API. Vui lòng thử lại.', 'warn');
+      return;
+    }
+    const statusEl = document.getElementById('registrationFormStatus');
+    const submitBtn = document.getElementById('registrationSubmitBtn');
+    const selectedType = f.querySelector('input[name="boothType"]:checked')?.value || 'personal';
+    const isVillage = selectedType === 'village';
+
+    if (statusEl) statusEl.innerHTML = '<span style="color:#1a7f5a;font-size:12px">⏳ Đang gửi đến Lark Base...</span>';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Đang gửi...'; }
+
+    const boothData = {
+      boothType: selectedType,
+      offer: d.offer || '',
+      offerTag: d.offerTag || '',
+      need: d.need || '',
+      needTag: d.needTag || '',
+      preferredFormat: d.preferredFormat || '',
+      outcome: d.outcome || '',
+      consent: !!f.querySelector('input[name="consent"]')?.checked,
+    };
+    window.AXANH_LIVE_API.createBooth(boothData).then((result) => {
+      closeModal();
+      launchFireworks({ bursts: 5 });
+      toast('🎉 Đăng ký gian hàng ' + (isVillage ? 'Làng' : 'Cá nhân') + ' thành công! Booth ID: ' + (result.data?.boothId || '—'));
+      if (result.data) {
+        LIVE.booths = [result.data, ...LIVE.booths];
+      }
+      marketTab = selectedType;
+      navigate('market');
+      // Reload booths từ Lark để đảm bảo đồng bộ
+      setTimeout(() => loadLiveBooths(), 1500);
+    }).catch((err) => {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#e11d48;font-size:12px">❌ ' + esc(err.message || 'Đăng ký thất bại. Vui lòng thử lại.') + '</span>';
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '✓ ' + (isVillage ? 'Đăng ký gian hàng cho Làng' : 'Đăng ký gian hàng'); }
+    });
+    return;
+  } });
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeModal();
+    const dd = document.getElementById('userDropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
+
+// Lắng nghe sự kiện logout từ api.js
+window.addEventListener('axanh:logout', () => {
+  LIVE.currentUser = null;
+  clearGate1Data();
+  resetLearningData();
+  knowledgeLoadGeneration += 1;
+  honorsLoadGeneration += 1;
+  LIVE.knowledge = { loading: false, error: '', items: [], diagnostics: {} };
+  LIVE.honors = { loading: false, error: '', data: null };
+  LIVE.connected = false;
+  LIVE.villages = [];
+  LIVE.members = [];
+  LIVE.booths = [];
+  LIVE.boothsError = '';
+  showAuthScreen();
+});
+
+// ===== KHỞI ĐỘNG ỨNG DỤNG =====
+async function init() {
+  // Hiện loading trước
+  renderAuthScreen({ loading: true });
+
+  // Kiểm tra session
+  const API = window.AXANH_LIVE_API;
+  if (!API) {
+    showAuthScreen('Thiếu FrontEnd/api.js. Vui lòng kiểm tra lại.');
+    return;
+  }
+
+  let me;
+  try {
+    me = await API.getMe();
+  } catch (error) {
+    console.error('[Auth] Session verification failed:', error);
+    showAuthScreen('Không thể kết nối hoặc xác minh phiên đăng nhập. Vui lòng thử lại sau.');
+    return;
+  }
+  if (!me) {
+    // Chưa đăng nhập → hiện màn hình login AXANH, KHÔNG load dữ liệu nội bộ
+    showAuthScreen();
+    return;
+  }
+
+  // Đã đăng nhập → hiện giao diện chính
+  LIVE.currentUser = me;
+  showAppShell();
+  render();
+
+  // Đồng bộ cấu hình biểu mẫu Lark từ Backend
+  if (API.getFormsConfig) {
+    API.getFormsConfig().then((cfg) => {
+      if (cfg) {
+        let changed = false;
+        if (cfg.form01Url !== undefined && STATE.settings.registrationUrl !== cfg.form01Url) {
+          STATE.settings.registrationUrl = cfg.form01Url || '';
+          changed = true;
+        }
+        if (cfg.form02Url !== undefined && STATE.settings.resultUrl !== cfg.form02Url) {
+          STATE.settings.resultUrl = cfg.form02Url || '';
+          changed = true;
+        }
+        if (changed) {
+          persist();
+          render();
+        }
+      }
+    }).catch(() => {});
+  }
+
+  // Nền: tải villages + members
+  await loadLiveData();
+  await loadGate1();
+  if (currentPage === 'matches') {
+    loadMatching();
+  }
+}
+
+// Khởi động
+init();

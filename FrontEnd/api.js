@@ -28,19 +28,32 @@
   }
 
   async function getMe() {
-    try {
-      const response = await fetch('/api/v1/me', {
-        method: 'GET',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: { Accept: 'application/json' },
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return (data && data.authenticated) ? data.user : null;
-    } catch {
-      return null;
+    const response = await fetch('/api/v1/me', {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+
+    if (response.status === 401) return null;
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw Object.assign(
+        new Error(data.error || 'Không thể xác minh phiên đăng nhập (HTTP ' + response.status + ').'),
+        { status: response.status }
+      );
     }
+
+    if (data.authenticated === false) return null;
+
+    if (data.authenticated === true && data.user &&
+        typeof data.user === 'object') {
+      return data.user;
+    }
+
+    throw new Error('Phản hồi phiên đăng nhập không hợp lệ.');
   }
 
   async function loadData() {
@@ -318,24 +331,40 @@
     syncBooths,
     getMatchingContext,
     getMatchingSuggestions,
-    // Connection Request & Approval System (T14_Connections on Lark Base)
-    async createConnection({ sourceBoothId, targetBoothId, connectionType = 'personal' }) {
+    // Connection Management System (T14_Connections on Lark Base)
+    async createConnection({ sourceBoothId, targetBoothId, connectionType = 'personal', idempotencyKey = null }) {
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      };
+      if (idempotencyKey) {
+        headers['Idempotency-Key'] = idempotencyKey;
+      }
       const response = await fetch('/api/v1/connections', {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ sourceBoothId, targetBoothId, connectionType }),
+        headers,
+        body: JSON.stringify({
+          sourceBoothId,
+          targetBoothId,
+          connectionType,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        }),
       });
       if (response.status === 401) {
         throw Object.assign(new Error('Phiên đăng nhập hết hạn.'), { status: 401 });
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result.error || `Gửi lời mời thất bại (HTTP ${response.status}).`);
+        throw Object.assign(
+          new Error(result.error || `Kết nối thất bại (HTTP ${response.status}).`),
+          {
+            status: response.status,
+            code: result.code || null,
+            data: result.data || null,
+          }
+        );
       }
       return result.data;
     },
@@ -353,9 +382,15 @@
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result.error || `Tải danh sách kết nối thất bại (HTTP ${response.status}).`);
+        throw Object.assign(
+          new Error(result.error || `Tải danh sách kết nối thất bại (HTTP ${response.status}).`),
+          { status: response.status }
+        );
       }
-      return result.items || [];
+      if (!Array.isArray(result.items)) {
+        throw new Error('Danh sách kết nối từ Backend không hợp lệ.');
+      }
+      return result.items;
     },
 
     async getConnectionsInbox() {
@@ -370,9 +405,15 @@
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result.error || `Tải hộp thư lời mời thất bại (HTTP ${response.status}).`);
+        throw Object.assign(
+          new Error(result.error || `Tải hộp thư lời mời thất bại (HTTP ${response.status}).`),
+          { status: response.status }
+        );
       }
-      return result.items || [];
+      if (!Array.isArray(result.items)) {
+        throw new Error('Hộp thư kết nối từ Backend không hợp lệ.');
+      }
+      return result.items;
     },
 
     async getConnectionById(id) {
@@ -388,7 +429,10 @@
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result.error || `Lỗi tải chi tiết kết nối (HTTP ${response.status}).`);
+        throw Object.assign(
+          new Error(result.error || `Lỗi tải chi tiết kết nối (HTTP ${response.status}).`),
+          { status: response.status }
+        );
       }
       return result.data;
     },
@@ -410,7 +454,10 @@
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result.error || `Xử lý xác nhận thất bại (HTTP ${response.status}).`);
+        throw Object.assign(
+          new Error(result.error || `Xử lý xác nhận thất bại (HTTP ${response.status}).`),
+          { status: response.status }
+        );
       }
       return result.data;
     },
@@ -431,25 +478,37 @@
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result.error || `Hủy lời mời thất bại (HTTP ${response.status}).`);
+        throw Object.assign(
+          new Error(result.error || `Hủy kết nối thất bại (HTTP ${response.status}).`),
+          { status: response.status, code: result.code || null }
+        );
       }
       return result;
     },
 
     async getNotificationsCount() {
-      try {
-        const response = await fetch('/api/v1/connections/notifications/count', {
-          method: 'GET',
-          credentials: 'same-origin',
-          cache: 'no-store',
-          headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) return { pendingCount: 0 };
-        const result = await response.json().catch(() => ({ pendingCount: 0 }));
-        return result;
-      } catch {
-        return { pendingCount: 0 };
+      const response = await fetch('/api/v1/connections/notifications/count', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw Object.assign(
+          new Error(result.error || 'Không thể tải số thông báo (HTTP ' + response.status + ').'),
+          { status: response.status }
+        );
       }
+
+      if (!Number.isSafeInteger(result.pendingCount) ||
+          result.pendingCount < 0) {
+        throw new Error('Dữ liệu số thông báo không hợp lệ.');
+      }
+
+      return result;
     },
     async getLearningData() {
       const result = await learningRequest('/api/v1/learning-sessions');

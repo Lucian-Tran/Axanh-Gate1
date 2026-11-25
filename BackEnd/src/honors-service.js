@@ -337,5 +337,10 @@ export function createHonorsService({
     }
   }
 
-  return { getOverview };
+  function invalidateCache() {
+    cachedOverview = null;
+    cacheExpiresAt = 0;
+  }
+
+  return { getOverview, invalidateCache };
 }

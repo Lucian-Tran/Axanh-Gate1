@@ -1,0 +1,62 @@
+version: "3.7"
+
+services:
+  backend:
+    container_name: axanh-gate1-backend
+
+    build:
+      context: ./BackEnd
+      dockerfile: Dockerfile
+
+    env_file:
+      - /volume1/AXANH-GATE1-PRIVATE/backend.env
+
+    environment:
+      NODE_ENV: "production"
+      HOST: "0.0.0.0"
+      PORT: "3100"
+      AUTH_DB_PATH: "/app/data/auth.db"
+      AXANH_DOCKER_PRIVATE: "true"
+      AXANH_TRUSTED_PROXY_IP: "172.28.7.10"
+      FRONTEND_URL: "https://knowledge.axanh.com"
+      LARK_SSO_REDIRECT_URI: "https://knowledge.axanh.com/auth/lark/callback"
+      COOKIE_SECURE: "true"
+
+    volumes:
+      - /volume1/AXANH-GATE1-PRIVATE/data:/app/data:rw
+
+    networks:
+      gate1_private:
+        ipv4_address: 172.28.7.20
+
+    security_opt:
+      - no-new-privileges:true
+
+    restart: "no"
+
+  web:
+    container_name: axanh-gate1-web
+
+    build:
+      context: ./FrontEnd/production
+      dockerfile: Dockerfile.gate1.candidate
+
+    depends_on:
+      - backend
+
+    networks:
+      gate1_private:
+        ipv4_address: 172.28.7.10
+
+    security_opt:
+      - no-new-privileges:true
+
+    restart: "no"
+
+networks:
+  gate1_private:
+    name: axanh-gate1-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.7.0/24

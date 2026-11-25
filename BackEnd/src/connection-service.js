@@ -41,6 +41,17 @@ export function createConnectionService({
   let cacheExpiresAt = 0;
   const CACHE_TTL_MS = 2000; // 2 seconds to allow snappy polling without spamming Lark
 
+  // Short-lived idempotency cache for create retries after network timeout
+  const recentIdempotency = new Map();
+  const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+
+  function pruneIdempotency() {
+    const now = Date.now();
+    for (const [k, v] of recentIdempotency.entries()) {
+      if (!v || now >= v.expiresAt) recentIdempotency.delete(k);
+    }
+  }
+
   async function getConnectionsRaw(forceFresh = false) {
     const now = Date.now();
     if (!forceFresh && cachedConnections && now < cacheExpiresAt) {
@@ -124,8 +135,40 @@ export function createConnectionService({
     return null;
   }
 
+  function isSameConnectionPair(c, {
+    normalizedType,
+    sourceBooth,
+    targetBooth,
+    sourceOwnerId,
+    targetMemberId,
+    sourceVilId,
+    targetVilId,
+  }) {
+    if (c.sourceBoothRecordId === sourceBooth.recordId && c.targetBoothRecordId === targetBooth.recordId) return true;
+    if (c.sourceBoothRecordId === targetBooth.recordId && c.targetBoothRecordId === sourceBooth.recordId) return true;
+    if (normalizedType === 'personal' && c.connectionType === 'personal') {
+      const cA = c.sourceBooth?.authorMemberId || c.requestedBy;
+      const cB = c.targetMemberId || c.targetBooth?.authorMemberId;
+      if (cA && cB && sourceOwnerId && targetMemberId) {
+        if ((cA === sourceOwnerId && cB === targetMemberId) || (cA === targetMemberId && cB === sourceOwnerId)) {
+          return true;
+        }
+      }
+    }
+    if (normalizedType === 'village' && c.connectionType === 'village') {
+      const cVilA = c.sourceVillageId || c.sourceBooth?.villageId;
+      const cVilB = c.targetVillageId || c.targetBooth?.villageId;
+      if (cVilA && cVilB && sourceVilId && targetVilId) {
+        if ((cVilA === sourceVilId && cVilB === targetVilId) || (cVilA === targetVilId && cVilB === sourceVilId)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /**
-   * 1. CREATE CONNECTION REQUEST
+   * 1. CREATE DIRECT CONNECTION (IMMEDIATELY ACCEPTED)
    * POST /api/v1/connections
    */
   async function createConnection({
@@ -169,7 +212,9 @@ export function createConnectionService({
     // Ownership & validity checks
     let approverMemberId = null;
     let targetMemberId = null;
-    let targetVillageId = null;
+    let sourceOwnerId = null;
+    let sourceVilId = null;
+    let targetVilId = null;
 
     if (normalizedType === 'personal') {
       if (sourceBooth.boothType !== 'personal' || targetBooth.boothType !== 'personal') {
@@ -177,25 +222,28 @@ export function createConnectionService({
         err.statusCode = 400;
         throw err;
       }
-      if (!isAdmin && sourceBooth.authorMemberId && sourceBooth.authorMemberId !== userId) {
-        const err = new Error('Bạn chỉ có thể gửi đề xuất từ gian hàng cá nhân của chính mình.');
+      const isSourceOwner = (sourceBooth.authorMemberId && sourceBooth.authorMemberId === userId) ||
+        (!sourceBooth.authorMemberId && Boolean(authStore?.isBoothOwner(sourceBooth.recordId, userId, sessionUser.name)));
+      if (!isAdmin && !isSourceOwner) {
+        const err = new Error('Bạn chỉ có thể kết nối từ gian hàng cá nhân của chính mình.');
         err.statusCode = 403;
         throw err;
       }
-      if (targetBooth.authorMemberId && targetBooth.authorMemberId === userId) {
-        const err = new Error('Bạn không thể gửi lời mời kết nối tới chính gian hàng của mình.');
-        err.statusCode = 400;
-        throw err;
-      }
-
+      sourceOwnerId = sourceBooth.authorMemberId || userId;
       targetMemberId = targetBooth.authorMemberId || null;
-      approverMemberId = targetMemberId;
 
-      if (!approverMemberId) {
-        const err = new Error('Không thể xác định chủ gian hàng đích (Member_ID) để nhận kết nối.');
+      if (!targetMemberId) {
+        const err = new Error('Không thể xác định chủ gian hàng đích (Member_ID) để kết nối.');
         err.statusCode = 400;
         throw err;
       }
+      if (targetMemberId === userId || targetMemberId === sourceOwnerId) {
+        const err = new Error('Bạn không thể tự kết nối với chính mình.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      approverMemberId = targetMemberId;
     } else {
       // Village mode
       if (sourceBooth.boothType !== 'village' || targetBooth.boothType !== 'village') {
@@ -204,8 +252,8 @@ export function createConnectionService({
         throw err;
       }
 
-      const sourceVilId = sourceBooth.villageId || sessionUser.villageId;
-      const targetVilId = targetBooth.villageId;
+      sourceVilId = sourceBooth.villageId || (!isAdmin ? sessionUser.villageId : null);
+      targetVilId = targetBooth.villageId;
 
       if (!sourceVilId) {
         const err = new Error('Gian hàng nguồn không có mã Làng xác định.');
@@ -218,19 +266,18 @@ export function createConnectionService({
         throw err;
       }
 
-      if (!isAdmin && sourceBooth.villageId && sourceBooth.villageId !== sessionUser.villageId) {
-        const err = new Error('Bạn chỉ có thể gửi đề xuất kết nối cho Làng của mình.');
+      if (!isAdmin && (!sessionUser.villageId || sourceVilId !== sessionUser.villageId)) {
+        const err = new Error('Bạn chỉ có thể thực hiện kết nối cho Làng của mình.');
         err.statusCode = 403;
         throw err;
       }
 
       if (sourceVilId === targetVilId) {
-        const err = new Error('Không thể gửi lời mời kết nối giữa cùng một Làng.');
+        const err = new Error('Không thể kết nối giữa cùng một Làng.');
         err.statusCode = 400;
         throw err;
       }
 
-      targetVillageId = targetVilId;
       approverMemberId = resolveVillageLeaderMemberId(targetVilId, ctx.villages, ctx.allMembers);
 
       if (!approverMemberId) {
@@ -240,60 +287,111 @@ export function createConnectionService({
       }
     }
 
-    const lockKey = `create:${sourceBooth.recordId}:${targetBooth.recordId}`;
+    // Symmetric canonical lock key serializes A->B, B->A, double-clicks, and retries for the same pair
+    const lockKey = normalizedType === 'personal'
+      ? `create:personal:${[sourceOwnerId, targetMemberId].sort().join(':')}`
+      : `create:village:${[sourceVilId, targetVilId].sort().join(':')}`;
+
+    const cleanIdempKey = (typeof idempotencyKey === 'string' && idempotencyKey.trim())
+      ? `${userId}:${idempotencyKey.trim()}`
+      : null;
 
     return withLock(lockKey, async () => {
-      // Check existing pending connections
+      pruneIdempotency();
+
       const existingRecords = await getConnectionsRaw(true);
       const mappedExisting = existingRecords.map((r) => mapConnection(r, ctx.boothsByRecordId, ctx.membersById, ctx.villagesById));
+      const pairContext = {
+        normalizedType,
+        sourceBooth,
+        targetBooth,
+        sourceOwnerId,
+        targetMemberId,
+        sourceVilId,
+        targetVilId,
+      };
 
-      const hasPending = mappedExisting.some((c) => {
-        if (c.status !== 'Pending') return false;
-        // Same pair of booths
-        if (c.sourceBoothRecordId === sourceBooth.recordId && c.targetBoothRecordId === targetBooth.recordId) return true;
-        // Or reverse pair of same booths
-        if (c.sourceBoothRecordId === targetBooth.recordId && c.targetBoothRecordId === sourceBooth.recordId) return true;
-        // Or for personal: same requester & same target member already pending
-        if (normalizedType === 'personal' && c.connectionType === 'personal' && c.requestedBy === userId && c.targetMemberId === targetMemberId) return true;
-        // Or for village: same source village & target village already pending
-        if (normalizedType === 'village' && c.connectionType === 'village' && c.sourceVillageId === sourceBooth.villageId && c.targetVillageId === targetVillageId) return true;
-        return false;
-      });
+      // Idempotent retry hit: if the same request already succeeded and connection is active, return it cleanly
+      if (cleanIdempKey && recentIdempotency.has(cleanIdempKey)) {
+        const cachedEntry = recentIdempotency.get(cleanIdempKey);
+        const stillActive = mappedExisting.find((c) => c.recordId === cachedEntry.recordId && c.status === 'Accepted');
+        if (stillActive) {
+          return { success: true, deduplicated: true, data: stillActive };
+        }
+      }
 
-      if (hasPending) {
-        const err = new Error('Đã có một lời mời kết nối đang ở trạng thái chờ (Pending) giữa hai bên.');
+      // Check existing active (Accepted) connection in either direction
+      const existingAccepted = mappedExisting.find((c) => c.status === 'Accepted' && isSameConnectionPair(c, pairContext));
+      if (existingAccepted) {
+        const err = new Error(normalizedType === 'village'
+          ? 'Hai Làng đã kết nối với nhau trước đó.'
+          : 'Hai thành viên đã kết nối với nhau trước đó.');
         err.statusCode = 409;
+        err.code = 'ALREADY_CONNECTED';
+        err.data = existingAccepted;
         throw err;
       }
 
+      // Legacy Pending records for this exact pair are superseded when connecting directly under new flow
+      const supersededPending = mappedExisting.filter((c) => c.status === 'Pending' && isSameConnectionPair(c, pairContext));
+
+      const now = Date.now();
       const fieldsToCreate = {
         Connection_Type: normalizedType === 'village' ? 'Làng' : 'Cá nhân',
         Source_Booth: [sourceBooth.recordId],
         Target_Booth: [targetBooth.recordId],
         Requested_By: userId,
-        Connection_Status: 'Pending',
+        Connection_Status: 'Accepted',
         Approver_Member_ID: approverMemberId,
-        Created_At: Date.now(),
+        Created_At: now,
+        Responded_At: now,
       };
 
       if (normalizedType === 'village') {
-        fieldsToCreate.Target_Village_ID = targetVillageId;
+        fieldsToCreate.Target_Village_ID = targetVilId;
       } else {
         fieldsToCreate.Target_Member_ID = targetMemberId;
       }
 
       const created = await lark.createRecord(config.connectionTableId, fieldsToCreate);
+      const createdRecordId = created?.record_id || created?.id;
+      if (!createdRecordId) {
+        const err = new Error('Lark Base không xác nhận đã tạo bản ghi kết nối.');
+        err.statusCode = 502;
+        throw err;
+      }
+
+      // Mark any superseded legacy Pending records for this pair as Cancelled (preserve history, never delete)
+      for (const oldPending of supersededPending) {
+        try {
+          await lark.updateRecord(config.connectionTableId, oldPending.recordId, {
+            Connection_Status: 'Cancelled',
+            Responded_At: now,
+          });
+        } catch (supErr) {
+          console.warn('[Connections] Non-fatal failure superseding legacy Pending record:', oldPending.recordId, supErr?.message);
+        }
+      }
+
       invalidateCache();
 
       const createdRecord = {
-        record_id: created.record_id || created.id,
+        record_id: createdRecordId,
         fields: {
           ...fieldsToCreate,
-          Connection_ID: created.fields?.Connection_ID || `Connection-${Date.now().toString().slice(-4)}`,
+          Connection_ID: created.fields?.Connection_ID || `Connection-${now.toString().slice(-4)}`,
         },
       };
 
       const mapped = mapConnection(createdRecord, ctx.boothsByRecordId, ctx.membersById, ctx.villagesById);
+
+      if (cleanIdempKey) {
+        recentIdempotency.set(cleanIdempKey, {
+          recordId: createdRecordId,
+          expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
+        });
+      }
+
       return { success: true, data: mapped };
     });
   }
@@ -498,7 +596,7 @@ export function createConnectionService({
 
       const updateFields = {
         Connection_Status: normDecision,
-        Responded_By: userId,
+        
         Responded_At: Date.now(),
       };
 
@@ -518,11 +616,33 @@ export function createConnectionService({
     });
   }
 
+  function canUserCancelConnection(mapped, userId, ctx) {
+    if (!mapped || !userId) return false;
+    if (mapped.connectionType === 'personal') {
+      return [
+        mapped.requestedBy,
+        mapped.targetMemberId,
+        mapped.approverMemberId,
+        mapped.sourceBooth?.authorMemberId,
+        mapped.targetBooth?.authorMemberId,
+      ].some((id) => id && id === userId);
+    }
+    // Village connection: only participating initiator or Village Leader representative on either side
+    const sourceLeaderId = resolveVillageLeaderMemberId(mapped.sourceVillageId, ctx.villages, ctx.allMembers);
+    const targetLeaderId = resolveVillageLeaderMemberId(mapped.targetVillageId, ctx.villages, ctx.allMembers);
+    return [
+      mapped.requestedBy,
+      mapped.approverMemberId,
+      sourceLeaderId,
+      targetLeaderId,
+    ].some((id) => id && id === userId);
+  }
+
   /**
-   * 5. CANCEL CONNECTION (SENDER ONLY)
+   * 5. CANCEL CONNECTION (PARTICIPANTS / VILLAGE REPRESENTATIVES)
    * POST /api/v1/connections/:id/cancel
    */
-  async function cancelConnection({ sessionUser, isAdmin = false, id }) {
+  async function cancelConnection({ sessionUser, id }) {
     const userId = getUserId(sessionUser);
     if (!sessionUser || !userId) {
       const err = new Error('Yêu cầu xác thực tài khoản.');
@@ -538,28 +658,36 @@ export function createConnectionService({
       const record = rawRecords.find((r) => r.record_id === id || r.fields?.Connection_ID === id);
 
       if (!record) {
-        const err = new Error('Không tìm thấy yêu cầu kết nối.');
+        const err = new Error('Không tìm thấy kết nối.');
         err.statusCode = 404;
         throw err;
       }
 
       const mapped = mapConnection(record, ctx.boothsByRecordId, ctx.membersById, ctx.villagesById);
 
-      if (mapped.status !== 'Pending') {
-        const err = new Error(`Không thể hủy lời mời đã có trạng thái "${mapped.status}".`);
-        err.statusCode = 409;
+      // Strict party / village-representative authorization (no implicit admin bypass)
+      if (!canUserCancelConnection(mapped, userId, ctx)) {
+        const err = new Error(mapped.connectionType === 'village'
+          ? 'Chỉ người đại diện hợp lệ của một trong hai Làng mới có quyền hủy kết nối này.'
+          : 'Bạn không có quyền hủy kết nối của người khác.');
+        err.statusCode = 403;
         throw err;
       }
 
-      if (!isAdmin && mapped.requestedBy !== userId) {
-        const err = new Error('Chỉ người gửi mới có quyền hủy lời mời kết nối này.');
-        err.statusCode = 403;
+      // Idempotent handling if already Cancelled
+      if (mapped.status === 'Cancelled') {
+        return { success: true, alreadyCancelled: true, data: mapped };
+      }
+
+      if (mapped.status !== 'Accepted' && mapped.status !== 'Pending') {
+        const err = new Error(`Không thể hủy kết nối đang ở trạng thái "${mapped.status}".`);
+        err.statusCode = 409;
         throw err;
       }
 
       const updateFields = {
         Connection_Status: 'Cancelled',
-        Responded_By: userId,
+        
         Responded_At: Date.now(),
       };
 

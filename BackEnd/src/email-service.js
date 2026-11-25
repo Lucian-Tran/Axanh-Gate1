@@ -76,6 +76,18 @@ async function sendRawSmtp({ config, to, subject, html, text }) {
     throw new Error('SMTP host is not configured.');
   }
 
+  // Port 587 requires STARTTLS, which is not implemented here.
+  // Fail closed instead of authenticating over plaintext TCP.
+  if (smtpSecure !== true || Number(smtpPort) !== 465) {
+    throw new Error(
+      'SMTP requires implicit TLS on port 465. Plaintext SMTP disabled.'
+    );
+  }
+
+  if (!smtpUser || !smtpPassword) {
+    throw new Error('SMTP credentials are not configured.');
+  }
+
   const fromEmailMatch = String(smtpFrom).match(/<([^>]+)>/);
   const fromEmail = fromEmailMatch ? fromEmailMatch[1].trim() : String(smtpFrom).trim();
   const cleanPassword = String(smtpPassword || '').replace(/\s+/g, '');
@@ -94,15 +106,21 @@ async function sendRawSmtp({ config, to, subject, html, text }) {
       reject(new Error('SMTP connection timed out after 20s.'));
     }, 20000);
 
-    const onConnect = () => {
-      // Waiting for 220 server banner
+    const tlsOptions = {
+      host: smtpHost,
+      port: smtpPort,
+      rejectUnauthorized: true,
+      minVersion: 'TLSv1.2',
+      ...(net.isIP(smtpHost) ? {} : { servername: smtpHost }),
     };
 
-    if (smtpSecure) {
-      socket = tls.connect({ host: smtpHost, port: smtpPort, rejectUnauthorized: false }, onConnect);
-    } else {
-      socket = net.connect({ host: smtpHost, port: smtpPort }, onConnect);
-    }
+    socket = tls.connect(tlsOptions, () => {
+      if (!socket.authorized) {
+        clearTimeout(timeout);
+        cleanup();
+        reject(new Error('SMTP TLS certificate verification failed.'));
+      }
+    });
 
     const sendCmd = (cmd) => {
       socket.write(`${cmd}\r\n`);
@@ -216,6 +234,12 @@ async function sendRawSmtp({ config, to, subject, html, text }) {
 
 export function createEmailService(config = {}) {
   const provider = config.email?.provider || (config.email?.smtpHost ? 'smtp' : 'mock');
+
+  if (process.env.NODE_ENV === 'production' && provider !== 'smtp') {
+    throw new Error(
+      'Production requires SMTP provider. Mock OTP is disabled.'
+    );
+  }
   const sentMessages = [];
 
   return {
