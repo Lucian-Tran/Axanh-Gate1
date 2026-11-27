@@ -2065,8 +2065,8 @@ function networkVillage() {
     const my = (a.y + b.y) / 2 + (CY - (a.y + b.y) / 2) * 0.4;
     const angA = Math.atan2(my - a.y, mx - a.x);
     const angB = Math.atan2(my - b.y, mx - b.x);
-    const offA = 46 + Math.max(0, Math.sin(angA) - 0.35) * 28;
-    const offB = 46 + Math.max(0, Math.sin(angB) - 0.35) * 28;
+    const offA = 38;
+    const offB = 38;
     const sx = a.x + offA * Math.cos(angA);
     const sy = a.y + offA * Math.sin(angA);
     const ex = b.x + offB * Math.cos(angB);
