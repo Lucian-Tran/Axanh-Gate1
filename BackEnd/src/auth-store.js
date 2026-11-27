@@ -314,6 +314,11 @@ export function createAuthStore(options = {}) {
       return db.prepare('SELECT record_id, booth_id, member_id, author_name, booth_type, village_id, created_at FROM booth_records WHERE record_id = ?').get(recordId);
     },
 
+    unregisterBooth(recordId) {
+      if (!recordId) return;
+      db.prepare('DELETE FROM booth_records WHERE record_id = ?').run(recordId);
+    },
+
     close() {
       try {
         db.close();

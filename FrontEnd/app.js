@@ -18,12 +18,45 @@ const DEFAULT_GATE1_ENTRIES = [
 ];
 function freshGateEntries() { return JSON.parse(JSON.stringify(DEFAULT_GATE1_ENTRIES)) }
 
-const PAGE_LABELS = { home: ['Tổng quan', 'Phiên chợ tri thức'], villages: ['Lark Base', '11 Làng AXANH'], members: ['Thành viên làng', 'Danh sách thành viên'], market: ['Gian hàng', 'Khám phá tri thức'], matches: ['Kết nối', 'Smart Matching'], network: ['Cộng đồng', 'Bản đồ tri thức'], schedule: ['Hoạt động', 'Lịch cùng học'], library: ['Tri thức', 'Thư viện chung'], awards: ['Ghi nhận', 'Vinh danh tri thức'], gate1: ['Gate 1', 'Điều kiện Quán quân'], forms: ['Biểu mẫu', 'Đăng ký & báo cáo'], settings: ['Hệ thống', 'Lark & API'] };
-const NAV = [['home', 'Tổng quan', 'home'], ['villages', 'Danh sách 11 Làng', 'grid'], ['members', 'Thành viên làng', 'users'], ['market', 'Phiên chợ tri thức', 'grid'], ['matches', 'Kết nối phù hợp', 'link'], ['network', 'Bản đồ kết nối', 'network'], ['schedule', 'Lịch cùng học', 'calendar'], ['library', 'Kho tri thức', 'book'], ['awards', 'Vinh danh', 'award'], ['gate1', 'Gate 1 Quán quân', 'shield'], ['forms', 'Hai biểu mẫu', 'form']];
+const PAGE_LABELS = { home: ['Tổng quan', 'Phiên chợ tri thức'], villages: ['Lark Base', '11 Làng AXANH'], members: ['Thành viên làng', 'Danh sách thành viên'], market: ['Gian hàng', 'Khám phá tri thức'], matches: ['Kết nối', 'Smart Matching'], network: ['Mạng lưới kết nối', 'Bản đồ kết nối'], 'connection-detail': ['Mạng lưới kết nối', 'Chi tiết kết nối toàn hệ thống'], schedule: ['Hoạt động', 'Lịch cùng học'], library: ['Tri thức', 'Thư viện chung'], awards: ['Ghi nhận', 'Vinh danh tri thức'], gate1: ['Gate 1', 'Điều kiện Quán quân'], forms: ['Biểu mẫu', 'Đăng ký & báo cáo'], settings: ['Hệ thống', 'Lark & API'] };
+const NAV = [
+  ['home', 'Tổng quan', 'home'],
+  ['villages', 'Danh sách 11 Làng', 'grid'],
+  ['members', 'Thành viên làng', 'users'],
+  ['market', 'Phiên chợ tri thức', 'grid'],
+  ['matches', 'Kết nối phù hợp', 'link'],
+  {
+    group: 'network-hub',
+    label: 'Mạng lưới kết nối',
+    icon: 'network',
+    children: [
+      ['network', 'Bản đồ kết nối', 'network'],
+      ['connection-detail', 'Chi tiết kết nối', 'users', { requiresOverviewAccess: true }],
+    ],
+  },
+  ['schedule', 'Lịch cùng học', 'calendar'],
+  ['library', 'Kho tri thức', 'book'],
+  ['awards', 'Vinh danh', 'award'],
+  ['gate1', 'Gate 1 Quán quân', 'shield'],
+  ['forms', 'Hai biểu mẫu', 'form'],
+];
+let navNetworkGroupOpen = false;
 const EMPTY_STATE = { profiles: {}, connections: [], results: [], gate1: freshGateEntries(), settings: { registrationUrl: '', resultUrl: '', gate1Url: '', apiBase: '', larkBase: DEFAULT_BASE }, seeker: 'VIL-0005', matchMode: 'person', villageSeeker: '' };
 let STATE = loadState(); let currentPage = 'home'; let marketSearch = ''; let officeFilter = 'all'; let __modalAction = null;
 const LIVE = { loading: true, connected: false, error: '', villages: [], members: [], booths: [], boothsLoading: false, boothsError: '', currentUser: null, connections: [], inboxConnections: [], notificationCount: 0, connectionsLoading: false, connectionsError: '', learning: { loading: false, error: '', sessions: [], availableConnections: [], reportOptions: { applied: [], formats: [] } }, knowledge: { loading: false, error: '', items: [], diagnostics: {} }, honors: { loading: false, error: '', data: null } };
 let connectionsActiveTab = 'accepted'; // 'accepted' | 'history' | 'inbox'
+const CONNECTIONS_PAGE_SIZE = 5;
+let connectionsPage = 1;
+// ===== CONNECTIONS OVERVIEW STATE =====
+let connOverview = { loading: false, error: '', data: null }; // data: { isPrivileged, items: [...] }
+let connOverviewPage = 1;
+const CONN_OVERVIEW_PAGE_SIZE = 10;
+let connOverviewSearch = '';
+let connOverviewVillage = 'all';
+let connOverviewSort = 'most'; // 'most'|'least'|'az'|'za'
+let connOverviewNoConn = false;
+let connOverviewExpandedId = null; // memberId của accordion đang mở
+let connOverviewBoothExpandedId = null; // memberId+peerId khi mở danh sách phiên chợ
 const MATCHING = {
   loading: false,
   error: '',
@@ -47,7 +80,7 @@ let libraryAppliedFilter = 'all';
 function loadState() { try { const raw = localStorage.getItem(STORE_KEY); if (!raw) return structuredClone(EMPTY_STATE); const x = JSON.parse(raw); return { ...structuredClone(EMPTY_STATE), ...x, profiles: x.profiles || {}, connections: x.connections || [], results: x.results || [], gate1: Array.isArray(x.gate1) && x.gate1.length ? x.gate1 : freshGateEntries(), settings: { ...EMPTY_STATE.settings, ...x.settings } } } catch (e) { return structuredClone(EMPTY_STATE) } }
 function persist() { try { localStorage.setItem(STORE_KEY, JSON.stringify(STATE)) } catch (e) { toast('Không lưu được dữ liệu trong trình duyệt.', 'warn') } }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])) }
-function icon(name, size = 20) { const d = { bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-8h6v8"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', link: '<path d="M10 13a5 5 0 0 0 7 .3l3-3A5 5 0 0 0 13 3l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7-.3l-3 3A5 5 0 0 0 11 21l1.7-1.7"/>', userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', checkCircle: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>', unlink: '<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/>', network: '<circle cx="12" cy="12" r="3"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="M6 6l4 4m4 4 4 4M18 6l-4 4M10 14l-4 4"/>', calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/><path d="m9 16 2 2 4-4"/>', book: '<path d="M12 7c-2-2-5-2-9-2v15c4 0 7 0 9 2 2-2 5-2 9-2V5c-4 0-7 0-9 2z"/><path d="M12 7v15"/>', award: '<circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h3"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.5 1-1.9 3.2-1.7-.7a8 8 0 0 1-2.3 1.3l-.3 1.8h-3.6l-.4-1.8a8 8 0 0 1-2.3-1.3l-1.7.7L5 16.1l1.5-1A8 8 0 0 1 6.3 12l-1.5-1L6.7 7.7l1.7.8a8 8 0 0 1 2.3-1.4L11 5h3.6l.4 2.1a8 8 0 0 1 2.3 1.4l1.7-.8 1.9 3.3-1.5 1c.2 1 .2 2 0 3z"/>', check: '<path d="m4 12 5 5L20 6"/>', arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>', star: '<path d="m12 2 3.2 6.4 7.1 1-5.2 5.1 1.3 7.1-6.4-3.4-6.4 3.4 1.3-7.1-5.2-5.1 7.1-1z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>', users: '<circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 3a4 4 0 0 1 0 8m2 10v-3a7 7 0 0 0-3-5.7"/>', spark: '<path d="m12 2 2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/>', gift: '<rect x="3" y="9" width="18" height="12" rx="1"/><path d="M3 13h18M12 9v12M12 9s-7-2-7-5c0-3 6-2 7 5zm0 0s7-2 7-5c0-3-6-2-7 5z"/>', send: '<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 5 5"/>', external: '<path d="M14 4h6v6m0-6-9 9"/><path d="M19 14v6H4V5h6"/>', download: '<path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/>', close: '<path d="M5 5l14 14M19 5 5 19"/>', plus: '<path d="M12 5v14M5 12h14"/>', refresh: '<path d="M20 6v6h-6M4 18v-6h6"/><path d="M5 10a8 8 0 0 1 13-4l2 2M4 16l2 2a8 8 0 0 0 13-4"/>', info: '<circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10h.01"/>', play: '<path d="m7 4 14 8-14 8z"/>' }; return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:' + size + 'px;height:' + size + 'px;max-width:' + size + 'px;max-height:' + size + 'px;display:inline-block;vertical-align:middle;flex-shrink:0">' + (d[name] || d.info) + '</svg>' }
+function icon(name, size = 20) { const d = { bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-8h6v8"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', link: '<path d="M10 13a5 5 0 0 0 7 .3l3-3A5 5 0 0 0 13 3l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7-.3l-3 3A5 5 0 0 0 11 21l1.7-1.7"/>', userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', checkCircle: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>', unlink: '<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/>', network: '<circle cx="12" cy="12" r="3"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/><path d="M6 6l4 4m4 4 4 4M18 6l-4 4M10 14l-4 4"/>', calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/><path d="m9 16 2 2 4-4"/>', book: '<path d="M12 7c-2-2-5-2-9-2v15c4 0 7 0 9 2 2-2 5-2 9-2V5c-4 0-7 0-9 2z"/><path d="M12 7v15"/>', award: '<circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h3"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.5 1-1.9 3.2-1.7-.7a8 8 0 0 1-2.3 1.3l-.3 1.8h-3.6l-.4-1.8a8 8 0 0 1-2.3-1.3l-1.7.7L5 16.1l1.5-1A8 8 0 0 1 6.3 12l-1.5-1L6.7 7.7l1.7.8a8 8 0 0 1 2.3-1.4L11 5h3.6l.4 2.1a8 8 0 0 1 2.3 1.4l1.7-.8 1.9 3.3-1.5 1c.2 1 .2 2 0 3z"/>', check: '<path d="m4 12 5 5L20 6"/>', arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>', star: '<path d="m12 2 3.2 6.4 7.1 1-5.2 5.1 1.3 7.1-6.4-3.4-6.4 3.4 1.3-7.1-5.2-5.1 7.1-1z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>', users: '<circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 3a4 4 0 0 1 0 8m2 10v-3a7 7 0 0 0-3-5.7"/>', spark: '<path d="m12 2 2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/>', gift: '<rect x="3" y="9" width="18" height="12" rx="1"/><path d="M3 13h18M12 9v12M12 9s-7-2-7-5c0-3 6-2 7 5zm0 0s7-2 7-5c0-3-6-2-7 5z"/>', send: '<path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 5 5"/>', external: '<path d="M14 4h6v6m0-6-9 9"/><path d="M19 14v6H4V5h6"/>', download: '<path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/>', close: '<path d="M5 5l14 14M19 5 5 19"/>', trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', plus: '<path d="M12 5v14M5 12h14"/>', refresh: '<path d="M20 6v6h-6M4 18v-6h6"/><path d="M5 10a8 8 0 0 1 13-4l2 2M4 16l2 2a8 8 0 0 0 13-4"/>', info: '<circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10h.01"/>', play: '<path d="m7 4 14 8-14 8z"/>' }; return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:' + size + 'px;height:' + size + 'px;max-width:' + size + 'px;max-height:' + size + 'px;display:inline-block;vertical-align:middle;flex-shrink:0">' + (d[name] || d.info) + '</svg>' }
 function getPeople() { return SEED.people.map(p => ({ ...p, ...(STATE.profiles[p.id] || {}) })) }
 function person(id) { return getPeople().find(p => p.id === id) }
 function pic(p, size = 50) { return p.avatar ? '<img class="person-avatar" src="' + p.avatar + '" alt="Logo ' + esc(p.village) + '" style="height:' + size + 'px;width:' + size + 'px">' : '<div class="person-avatar" style="height:' + size + 'px;width:' + size + 'px">' + esc(p.office === 'HR' ? 'HR' : p.office === 'IT' ? 'IT' : 'AX') + '</div>' }
@@ -85,6 +118,18 @@ function navigate(page) {
     currentPage = 'home';
     render();
     return;
+  }
+  if (currentPage === 'connection-detail') {
+    const canSee = LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin;
+    if (LIVE.currentUser && !canSee) {
+      currentPage = 'network';
+    } else {
+      navNetworkGroupOpen = true;
+      loadConnectionsOverview();
+    }
+  }
+  if (currentPage === 'network') {
+    navNetworkGroupOpen = true;
   }
   if (currentPage === 'matches') {
     loadMatching();
@@ -125,10 +170,32 @@ function navigate(page) {
 }
 function pageHeader(title, desc, action = '') { return '<div class="page-header"><div><div class="eyebrow">AXANH / ATED PRO</div><h1 class="page-title">' + esc(title) + '</h1>' + (desc ? '<p class="page-desc">' + desc + '</p>' : '') + '</div>' + action + '</div>' }
 function renderNav() {
+  const canSeeOverview = Boolean(LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin);
   const systemNav = LIVE.currentUser?.isAdmin
     ? '<div class="nav-section">HỆ THỐNG</div><nav class="nav"><button type="button" data-action="nav" data-page="settings" class="' + (currentPage === 'settings' ? 'active' : '') + '">' + icon('settings') + ' Cấu hình tích hợp</button></nav>'
     : '';
-  document.querySelector('#navArea').innerHTML = '<div class="nav-section">KHÁM PHÁ</div><nav class="nav">' + NAV.map(([id, l, ico]) => '<button type="button" data-action="nav" data-page="' + id + '" class="' + (currentPage === id ? 'active' : '') + '"><span class="nav-ico">' + icon(ico) + '</span>' + l + '</button>').join('') + '</nav>' + systemNav;
+  const navHtml = NAV.map(item => {
+    if (Array.isArray(item)) {
+      const [id, l, ico] = item;
+      return '<button type="button" data-action="nav" data-page="' + id + '" class="' + (currentPage === id ? 'active' : '') + '"><span class="nav-ico">' + icon(ico) + '</span>' + l + '</button>';
+    }
+    const visibleChildren = item.children.filter(([, , , opts]) => !opts?.requiresOverviewAccess || canSeeOverview);
+    const hasActiveChild = visibleChildren.some(([cid]) => cid === currentPage);
+    const isOpen = navNetworkGroupOpen || hasActiveChild;
+    return '<div class="nav-group' + (isOpen ? ' open' : '') + '">'
+      + '<button type="button" data-action="toggle-nav-group" data-group="' + item.group + '" class="nav-group-btn' + (hasActiveChild ? ' has-active' : '') + '">'
+      + '<span class="nav-ico">' + icon(item.icon) + '</span>'
+      + '<span style="flex:1">' + item.label + '</span>'
+      + '<svg class="nav-group-chevron' + (isOpen ? ' open' : '') + '" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
+      + '</button>'
+      + (isOpen
+        ? '<div class="nav-sub">' + visibleChildren.map(([cid, cl, cico]) =>
+            '<button type="button" data-action="nav" data-page="' + cid + '" class="nav-sub-btn' + (currentPage === cid ? ' active' : '') + '"><span class="nav-ico">' + icon(cico, 15) + '</span>' + cl + '</button>'
+          ).join('') + '</div>'
+        : '')
+      + '</div>';
+  }).join('');
+  document.querySelector('#navArea').innerHTML = '<div class="nav-section">KHÁM PHÁ</div><nav class="nav">' + navHtml + '</nav>' + systemNav;
 }
 function stats() {
   const active = Array.isArray(LIVE.connections)
@@ -210,15 +277,27 @@ function formatPreferredSlot(value) {
   });
 }
 
+function isOwnBooth(b) {
+  if (!LIVE.currentUser || !b) return false;
+  const uid = LIVE.currentUser.memberId || LIVE.currentUser.id;
+  return Boolean(
+    (uid && b.authorMemberId === uid) ||
+    (b.authorName && LIVE.currentUser.name && b.authorName.toLowerCase() === LIVE.currentUser.name.toLowerCase())
+  );
+}
+
 function personalBoothCard(b) {
   const slotText = formatPreferredSlot(b.availability);
   const avatarHtml = b.authorAvatarUrl
     ? '<img src="' + esc(b.authorAvatarUrl) + '" alt="' + esc(b.authorName) + '" style="width:52px;height:52px;object-fit:cover;border-radius:50%;display:block" onerror="this.style.display=\'none\';">'
     : '<div style="width:52px;height:52px;border-radius:50%;background:#1a3a6e;display:grid;place-items:center;color:#fff;font-weight:700;font-size:17px">' + esc((b.authorName || 'AX')[0].toUpperCase()) + '</div>';
-  const isOwn = LIVE.currentUser && (
-    b.authorMemberId === LIVE.currentUser.memberId ||
-    (b.authorName && LIVE.currentUser.name && b.authorName.toLowerCase() === LIVE.currentUser.name.toLowerCase())
-  );
+  const isOwn = isOwnBooth(b);
+  const deleteBtnHtml = (isOwn && b.recordId)
+    ? '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:#64748b">'
+      + '<span>' + esc(b.boothId || '') + (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleDateString('vi-VN') : '') + '</span>'
+      + '<button type="button" class="btn small btn-cancel-outline" data-action="prompt-delete-booth" data-id="' + esc(b.recordId) + '">' + icon('trash', 12) + ' Xóa phiên chợ</button>'
+      + '</div>'
+    : '';
   return '<article class="person-card">'
     + '<div class="person-head">'
     + '<div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0">' + avatarHtml + '</div>'
@@ -233,6 +312,7 @@ function personalBoothCard(b) {
     + (b.preferredFormat ? '<div><span class="row-label">' + icon('link', 11) + ' Hình thức</span><small>' + esc(b.preferredFormat) + '</small></div>' : '')
     + (slotText ? '<div><span class="row-label">' + icon('clock', 11) + ' Khung giờ ưu tiên</span><small>' + esc(slotText) + '</small></div>' : '')
     + '</div>'
+    + deleteBtnHtml
     + '</article>';
 }
 
@@ -304,10 +384,7 @@ function villageBoothCard(b) {
     ? '<img src="' + esc(logoUrl) + '" alt="' + esc(villageName) + '" style="width:52px;height:52px;object-fit:contain;border-radius:12px;background:#fff;padding:4px;border:1px solid #dbe4ef;display:block" onerror="this.style.display=\'none\';">'
     : '<div style="width:52px;height:52px;border-radius:12px;background:#dbeafe;color:#1e40af;display:grid;place-items:center;font-weight:800;font-size:16px;border:1px solid #bfdbfe">🏛️</div>';
 
-  const isRegisteredByMe = LIVE.currentUser && (
-    b.authorMemberId === LIVE.currentUser.memberId ||
-    (b.authorName && LIVE.currentUser.name && b.authorName.toLowerCase() === LIVE.currentUser.name.toLowerCase())
-  );
+  const isRegisteredByMe = isOwnBooth(b);
 
   return '<article class="person-card village-booth-card" style="border-top:3px solid #2563eb">'
     + '<div class="person-head">'
@@ -332,9 +409,12 @@ function villageBoothCard(b) {
     + (pendingConnections > 0 ? '<b style="color:#b45309">◷ ' + pendingConnections + ' chờ duyệt (cũ)</b>' : '')
     + '</span><span style="color:#2563eb;font-size:18px">›</span>'
     + '</span></button>'
-    + '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:#64748b">'
+    + '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11.5px;color:#64748b">'
     + '<span>Đăng ký bởi: <b style="color:#0f172a">' + esc(b.authorName || 'Thành viên') + '</b>' + (isRegisteredByMe ? ' <span class="tag" style="font-size:10px;padding:1px 5px">Tôi đăng ký</span>' : '') + '</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:8px">'
     + (b.createdAt ? '<span style="font-size:11px">' + new Date(b.createdAt).toLocaleDateString('vi-VN') + '</span>' : '')
+    + ((isRegisteredByMe && b.recordId) ? '<button type="button" class="btn small btn-cancel-outline" data-action="prompt-delete-booth" data-id="' + esc(b.recordId) + '">' + icon('trash', 12) + ' Xóa</button>' : '')
+    + '</span>'
     + '</div>'
     + '</article>';
 }
@@ -616,6 +696,71 @@ function getConnectionPeerLabel(conn, myMemberId = LIVE.currentUser?.memberId, m
 
 const IN_FLIGHT_CONNECT = new Map();
 let inFlightCancelId = null;
+let inFlightDeleteBoothId = null;
+
+function openDeleteBoothModal(recordId) {
+  const b = (LIVE.booths || []).find(item => item.recordId === recordId);
+  if (!b || !isOwnBooth(b)) return;
+  const typeLabel = b.boothType === 'village' ? 'Gian hàng Làng' : 'Gian hàng Cá nhân';
+  const bodyHtml = '<div class="confirm-unlink-head">'
+    + '<div class="confirm-unlink-icon">' + icon('trash', 22) + '</div>'
+    + '<div style="flex:1;min-width:0">'
+    + '<p style="margin:0 0 10px;font-size:14.5px;line-height:1.6;color:#1e293b">'
+    + 'Bạn có chắc chắn muốn xóa phiên chợ <b>' + esc(b.boothId || '') + '</b> (' + esc(typeLabel) + ') không?'
+    + '</p>'
+    + '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#334155">'
+    + '<div><b>Có thể chia sẻ:</b> ' + esc(b.offer || '—') + '</div>'
+    + '<div style="margin-top:4px"><b>Muốn học:</b> ' + esc(b.need || '—') + '</div>'
+    + '</div>'
+    + '<div id="deleteBoothModalError" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:12.5px;font-weight:600"></div>'
+    + '</div>'
+    + '</div>';
+  const footerHtml = '<button type="button" class="btn" id="deleteBoothBackBtn" data-action="close-modal">Quay lại</button>'
+    + '<button type="button" class="btn btn-danger-solid" id="deleteBoothConfirmBtn" data-action="confirm-delete-booth" data-id="' + esc(recordId) + '">Xóa phiên chợ</button>';
+  openModal('Xóa phiên chợ đã đăng ký?', bodyHtml, footerHtml);
+  setTimeout(() => {
+    const backBtn = document.getElementById('deleteBoothBackBtn');
+    if (backBtn) backBtn.focus();
+  }, 10);
+}
+
+async function confirmDeleteBooth(recordId) {
+  if (!recordId || inFlightDeleteBoothId === recordId) return;
+  inFlightDeleteBoothId = recordId;
+  const confirmBtn = document.getElementById('deleteBoothConfirmBtn');
+  const backBtn = document.getElementById('deleteBoothBackBtn');
+  const errBox = document.getElementById('deleteBoothModalError');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Đang xóa...'; }
+  if (backBtn) backBtn.disabled = true;
+
+  try {
+    await window.AXANH_LIVE_API.deleteBooth(recordId);
+    LIVE.booths = (LIVE.booths || []).filter(item => item.recordId !== recordId);
+    MATCHING.context = null;
+    MATCHING.suggestionsData = null;
+    closeModal();
+    toast('Đã xóa phiên chợ khỏi Phiên chợ tri thức.', 'good');
+    render();
+    loadLiveBooths();
+  } catch (err) {
+    if (err?.status === 401) {
+      closeModal();
+      showSessionExpiredModal();
+    } else {
+      if (errBox) {
+        errBox.textContent = err?.message || 'Không thể xóa phiên chợ. Vui lòng thử lại.';
+        errBox.style.display = 'block';
+      } else {
+        toast(err?.message || 'Không thể xóa phiên chợ. Vui lòng thử lại.', 'warn');
+      }
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Xóa phiên chợ'; }
+      if (backBtn) backBtn.disabled = false;
+    }
+  } finally {
+    inFlightDeleteBoothId = null;
+  }
+}
 
 function openCancelConnectionModal({ connId, targetLabel, connectionType = 'personal' }) {
   if (!connId) return;
@@ -670,6 +815,9 @@ async function confirmCancelConnection(connId) {
     if (LIVE.learning.sessions.length > 0 || LIVE.learning.availableConnections.length > 0 || currentPage === 'schedule') {
       loadLearningData();
     }
+    // Invalidate connections overview
+    connOverview.data = null;
+    loadConnectionsOverview();
     render();
   } catch (err) {
     console.error('[Connection] Error cancelling connection:', err);
@@ -780,6 +928,9 @@ async function createLiveMatch(idx) {
     if (LIVE.learning.sessions.length > 0 || LIVE.learning.availableConnections.length > 0 || currentPage === 'schedule') {
       loadLearningData();
     }
+    // Invalidate connections overview
+    connOverview.data = null;
+    loadConnectionsOverview();
     closeModal();
     render();
   } catch (err) {
@@ -1174,10 +1325,15 @@ function renderConnectionsManager() {
 
   // If inbox becomes empty while on inbox tab, switch cleanly to accepted tab
   const activeTab = (connectionsActiveTab === 'inbox' && inbox.length === 0) ? 'accepted' : connectionsActiveTab;
+  const activeItems = activeTab === 'inbox' ? inbox : (activeTab === 'history' ? historyConns : accepted);
+  const totalPages = Math.max(1, Math.ceil(activeItems.length / CONNECTIONS_PAGE_SIZE));
+  connectionsPage = Math.min(Math.max(1, connectionsPage), totalPages);
+  const startIdx = (connectionsPage - 1) * CONNECTIONS_PAGE_SIZE;
+  const pagedItems = activeItems.slice(startIdx, startIdx + CONNECTIONS_PAGE_SIZE);
 
   let listHtml = '';
   if (activeTab === 'inbox' && inbox.length > 0) {
-    listHtml = inbox.map(c => {
+    listHtml = pagedItems.map(c => {
       const isPers = c.connectionType === 'personal';
       const senderName = c.sourceBooth?.authorName || c.requestedBy;
       const senderVil = c.sourceBooth?.authorVillageName || c.sourceBooth?.villageName || '—';
@@ -1214,7 +1370,7 @@ function renderConnectionsManager() {
     if (historyConns.length === 0) {
       listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Chưa có lịch sử kết nối đã hủy hoặc từ chối.</p></div>';
     } else {
-      listHtml = historyConns.map(c => {
+      listHtml = pagedItems.map(c => {
         const isPers = c.connectionType === 'personal';
         const sName = isPers
           ? (c.seekerName || c.sourceBooth?.authorName || c.requestedBy)
@@ -1248,7 +1404,7 @@ function renderConnectionsManager() {
     if (accepted.length === 0) {
       listHtml = '<div class="empty" style="padding:32px 16px"><p style="margin:0;color:#64748b">Chưa có kết nối nào đang hoạt động. Bấm <b>Kết nối</b> ở các gợi ý phía trên để kết nối ngay.</p></div>';
     } else {
-      listHtml = accepted.map(c => {
+      listHtml = pagedItems.map(c => {
         const isPers = c.connectionType === 'personal';
         const sName = isPers
           ? (c.seekerName || c.sourceBooth?.authorName || c.requestedBy)
@@ -1283,6 +1439,20 @@ function renderConnectionsManager() {
     }
   }
 
+  const paginationHtml = totalPages > 1
+    ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;flex-wrap:wrap">'
+      + '<small style="color:#64748b">Hiển thị ' + (startIdx + 1) + '–' + Math.min(startIdx + CONNECTIONS_PAGE_SIZE, activeItems.length) + ' / ' + activeItems.length + ' kết nối (Trang ' + connectionsPage + '/' + totalPages + ')</small>'
+      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      + '<button type="button" class="btn small" data-action="set-conn-page" data-page="' + (connectionsPage - 1) + '"' + (connectionsPage <= 1 ? ' disabled' : '') + '>‹ Trước</button>'
+      + Array.from({ length: totalPages }, (_, idx) => {
+          const p = idx + 1;
+          return '<button type="button" class="btn small ' + (p === connectionsPage ? 'btn-primary' : '') + '" data-action="set-conn-page" data-page="' + p + '">' + p + '</button>';
+        }).join('')
+      + '<button type="button" class="btn small" data-action="set-conn-page" data-page="' + (connectionsPage + 1) + '"' + (connectionsPage >= totalPages ? ' disabled' : '') + '>Sau ›</button>'
+      + '</div>'
+      + '</div>'
+    : '';
+
   return '<div class="connections-manager-wrap" style="margin-top:36px;border-top:1px solid #e2e8f0;padding-top:24px">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">'
     + '  <div>'
@@ -1307,6 +1477,7 @@ function renderConnectionsManager() {
     + '</div>'
     + '<div style="margin-top:14px">'
     +    listHtml
+    +    paginationHtml
     + '</div>'
     + '</div>';
 }
@@ -1356,6 +1527,232 @@ function getVillageNodeCoords(key, villageName, villageId, coords, nodeMap) {
     }
   }
   return null;
+}
+
+// ===== CONNECTIONS OVERVIEW – Load & Render =====
+async function loadConnectionsOverview() {
+  if (connOverview.loading) return;
+  connOverview.loading = true;
+  connOverview.error = '';
+  if (currentPage === 'connection-detail') render();
+  try {
+    const result = await window.AXANH_LIVE_API.getConnectionsOverview();
+    connOverview.data = result;
+    connOverview.error = '';
+  } catch (err) {
+    if (err?.status === 401) { showSessionExpiredModal(); return; }
+    connOverview.error = err?.message || 'Không thể tải dữ liệu kết nối tổng quan.';
+  } finally {
+    connOverview.loading = false;
+    if (currentPage === 'connection-detail') render();
+  }
+}
+
+function connectionDetail() {
+  const canSee = LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin;
+  if (!canSee) {
+    return '<div class="empty">' + icon('shield', 32)
+      + '<b>Không có quyền truy cập</b>'
+      + '<p>Trang Chi tiết kết nối toàn hệ thống chỉ dành cho Ban tổ chức / Quản trị viên.</p>'
+      + '<button class="btn btn-primary" data-action="nav" data-page="network">Về Bản đồ kết nối</button>'
+      + '</div>';
+  }
+  return renderConnectionsOverview();
+}
+
+function normStr(s) {
+  return String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D');
+}
+
+function renderConnectionsOverview() {
+  const canSee = LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin;
+  if (!canSee) return '';
+
+  // Auto-load nếu chưa có data
+  if (!connOverview.data && !connOverview.loading && !connOverview.error) {
+    loadConnectionsOverview();
+  }
+
+  const headerHtml = '<div class="conn-ov-header">'
+    + '<div class="conn-ov-header-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a7de8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="4" height="18" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="17" y="13" width="4" height="8" rx="1"/></svg></div>'
+    + '<div><div class="conn-ov-title">Chi tiết kết nối toàn hệ thống</div>'
+    + '<div class="conn-ov-subtitle">Tra cứu kết nối theo từng thành viên</div></div>'
+    + '</div>';
+
+  if (connOverview.loading) {
+    return '<div class="conn-overview-wrap">' + headerHtml
+      + '<div class="conn-ov-state">' + icon('refresh', 18) + ' Đang tải dữ liệu kết nối...</div>'
+      + '</div>';
+  }
+  if (connOverview.error) {
+    return '<div class="conn-overview-wrap">' + headerHtml
+      + '<div class="conn-ov-state conn-ov-error">' + icon('info', 18) + ' ' + esc(connOverview.error)
+      + ' <button class="btn small" data-action="reload-conn-overview">Thử lại</button></div>'
+      + '</div>';
+  }
+  if (!connOverview.data) {
+    return '<div class="conn-overview-wrap">' + headerHtml + '</div>';
+  }
+
+  const rawItems = connOverview.data.items || [];
+
+  // ---- Bộ lọc làng (từ dữ liệu thực) ----
+  const villageSet = new Set(rawItems.map(m => m.villageName).filter(Boolean));
+  const villageOptions = [...villageSet].sort();
+
+  // ---- Thanh công cụ ----
+  const toolbar = '<div class="conn-ov-toolbar">'
+    + '<div class="conn-ov-search-wrap">'
+    + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 5 5"/></svg>'
+    + '<input id="connOvSearch" class="conn-ov-search" type="text" placeholder="Tìm thành viên, phiên chợ..." value="' + esc(connOverviewSearch) + '" autocomplete="off">'
+    + '</div>'
+    + '<select id="connOvVillage" class="conn-ov-select">'
+    + '<option value="all"' + (connOverviewVillage === 'all' ? ' selected' : '') + '>Tất cả làng</option>'
+    + villageOptions.map(v => '<option value="' + esc(v) + '"' + (connOverviewVillage === v ? ' selected' : '') + '>' + esc(v) + '</option>').join('')
+    + '</select>'
+    + '<select id="connOvSort" class="conn-ov-select">'
+    + ['most:Kết nối nhiều nhất', 'least:Kết nối ít nhất', 'az:Tên A – Z', 'za:Tên Z – A'].map(opt => {
+        const [v, label] = opt.split(':');
+        return '<option value="' + v + '"' + (connOverviewSort === v ? ' selected' : '') + '>' + label + '</option>';
+      }).join('')
+    + '</select>'
+    + '<label class="conn-ov-check-label">'
+    + '<input id="connOvNoConn" type="checkbox"' + (connOverviewNoConn ? ' checked' : '') + '>'
+    + ' Chỉ chưa có kết nối'
+    + '</label>'
+    + '</div>';
+
+  return '<div class="conn-overview-wrap">'
+    + headerHtml + toolbar
+    + '<div id="connOvBody">' + renderConnectionsOverviewBody() + '</div>'
+    + '</div>';
+}
+
+function renderConnectionsOverviewBody() {
+  const rawItems = connOverview.data?.items || [];
+
+  // ---- Lọc + Sort ----
+  const sq = normStr(connOverviewSearch);
+  let filtered = rawItems.filter(m => {
+    if (connOverviewVillage !== 'all' && m.villageName !== connOverviewVillage) return false;
+    if (connOverviewNoConn && m.connectedCount > 0) return false;
+    if (!sq) return true;
+    if (normStr(m.name).includes(sq)) return true;
+    if (normStr(m.memberId).includes(sq)) return true;
+    // Tìm theo tên/id phiên chợ liên quan
+    if (m.connectedPeers?.some(p =>
+      p.relatedBooths?.some(b => normStr(b.boothId).includes(sq) || normStr(b.offer).includes(sq))
+    )) return true;
+    return false;
+  });
+
+  if (connOverviewSort === 'most') filtered.sort((a, b) => b.connectedCount - a.connectedCount);
+  else if (connOverviewSort === 'least') filtered.sort((a, b) => a.connectedCount - b.connectedCount);
+  else if (connOverviewSort === 'az') filtered.sort((a, b) => normStr(a.name).localeCompare(normStr(b.name)));
+  else if (connOverviewSort === 'za') filtered.sort((a, b) => normStr(b.name).localeCompare(normStr(a.name)));
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / CONN_OVERVIEW_PAGE_SIZE));
+  const page = Math.min(connOverviewPage, totalPages);
+  const pageItems = filtered.slice((page - 1) * CONN_OVERVIEW_PAGE_SIZE, page * CONN_OVERVIEW_PAGE_SIZE);
+  const startIdx = (page - 1) * CONN_OVERVIEW_PAGE_SIZE + 1;
+  const endIdx = Math.min(page * CONN_OVERVIEW_PAGE_SIZE, total);
+
+  // ---- Bảng ----
+  let tableBody = '';
+  if (pageItems.length === 0) {
+    tableBody = '<tr><td colspan="4" style="text-align:center;padding:28px;color:#94a3b8">'
+      + icon('users', 20) + ' Không tìm thấy thành viên phù hợp.</td></tr>';
+  } else {
+    pageItems.forEach(m => {
+      const isExpanded = connOverviewExpandedId === m.memberId;
+      const avHtml = m.avatarUrl
+        ? '<img src="' + esc(m.avatarUrl) + '" alt="' + esc(m.name) + '" class="conn-ov-avatar" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+          + '<div class="conn-ov-avatar conn-ov-avatar-fb" style="display:none">' + esc((m.name || 'A')[0].toUpperCase()) + '</div>'
+        : '<div class="conn-ov-avatar conn-ov-avatar-fb">' + esc((m.name || 'A')[0].toUpperCase()) + '</div>';
+      const villageDot = '<span class="conn-ov-village-dot"></span>';
+      const countBadge = m.connectedCount > 0
+        ? '<span class="conn-ov-count-badge">' + m.connectedCount + '</span>'
+        : '<span class="conn-ov-count-zero">0</span>';
+      const chevron = '<svg class="conn-ov-chevron' + (isExpanded ? ' expanded' : '') + '" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>';
+
+      tableBody += '<tr class="conn-ov-row' + (isExpanded ? ' expanded' : '') + '" data-action="toggle-conn-ov-row" data-id="' + esc(m.memberId) + '">'
+        + '<td><div class="conn-ov-member-cell">' + avHtml + '<div><div class="conn-ov-name">' + esc(m.name) + '</div>'
+        + (m.office ? '<div class="conn-ov-office">' + esc(m.office) + '</div>' : '') + '</div></div></td>'
+        + '<td><div class="conn-ov-village-cell">' + villageDot + esc(m.villageName || '—') + '</div></td>'
+        + '<td style="text-align:center">' + countBadge + '</td>'
+        + '<td style="text-align:center;width:40px">' + (m.connectedCount > 0 ? chevron : '') + '</td>'
+        + '</tr>';
+
+      if (isExpanded && m.connectedPeers?.length > 0) {
+        tableBody += '<tr class="conn-ov-expand-row"><td colspan="4">'
+          + '<div class="conn-ov-expand">'
+          + '<div class="conn-ov-expand-label">Đã kết nối với ' + m.connectedPeers.length + ' thành viên:</div>'
+          + '<div class="conn-ov-grid">'
+          + m.connectedPeers.map(peer => {
+              const boothKey = m.memberId + '__' + peer.memberId;
+              const boothExpanded = connOverviewBoothExpandedId === boothKey;
+              const pAvHtml = peer.avatarUrl
+                ? '<img src="' + esc(peer.avatarUrl) + '" alt="' + esc(peer.name) + '" class="conn-ov-card-avatar" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+                  + '<div class="conn-ov-card-avatar conn-ov-avatar-fb" style="display:none">' + esc((peer.name || 'A')[0].toUpperCase()) + '</div>'
+                : '<div class="conn-ov-card-avatar conn-ov-avatar-fb">' + esc((peer.name || 'A')[0].toUpperCase()) + '</div>';
+              const boothsHtml = peer.relatedBooths?.length
+                ? '<div class="conn-ov-booth-toggle" data-action="toggle-conn-booth" data-id="' + esc(boothKey) + '">'
+                    + icon('grid', 12)
+                    + ' Phiên chợ liên quan (' + peer.relatedBooths.length + ')'
+                    + '<svg class="conn-ov-chevron-sm' + (boothExpanded ? ' expanded' : '') + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>'
+                    + '</div>'
+                    + (boothExpanded
+                      ? '<div class="conn-ov-booth-list">'
+                        + peer.relatedBooths.map(b => {
+                            const boothTitle = b.offer || b.offerTag || '';
+                            return '<div class="conn-ov-booth-item"' + (boothTitle ? ' title="' + esc(boothTitle) + '"' : '') + '><b>' + esc(b.boothId) + '</b>'
+                              + (boothTitle ? ' – <span>' + esc(boothTitle.length > 60 ? boothTitle.slice(0, 58) + '…' : boothTitle) + '</span>' : '')
+                              + '</div>';
+                          }).join('')
+                        + '</div>'
+                      : '')
+                : '<div class="conn-ov-no-booth">Không có phiên chợ liên kết</div>';
+              return '<div class="conn-ov-card">'
+                + '<div class="conn-ov-card-top">' + pAvHtml
+                + '<div class="conn-ov-card-info"><div class="conn-ov-card-name">' + esc(peer.name) + '</div>'
+                + '<div class="conn-ov-card-village"><span class="conn-ov-village-dot"></span>' + esc(peer.villageName || '—') + '</div>'
+                + '</div></div>'
+                + '<div class="conn-ov-card-status">' + icon('checkCircle', 13) + ' Đã kết nối</div>'
+                + boothsHtml
+                + '</div>';
+            }).join('')
+          + '</div></div></td></tr>';
+      }
+    });
+  }
+
+  const table = '<div class="conn-ov-table-wrap"><table class="conn-overview-table">'
+    + '<thead><tr>'
+    + '<th>THÀNH VIÊN</th><th>LÀNG</th><th style="text-align:center">SỐ KẾT NỐI</th><th></th>'
+    + '</tr></thead>'
+    + '<tbody>' + tableBody + '</tbody>'
+    + '</table></div>';
+
+  // ---- Phân trang ----
+  let pagination = '';
+  if (totalPages > 1) {
+    pagination = '<div class="conn-ov-pagination">'
+      + '<span class="conn-ov-pagination-info">Hiển thị ' + startIdx + '–' + endIdx + ' / ' + total + '</span>'
+      + '<div class="conn-ov-pagination-btns">'
+      + '<button class="conn-ov-page-btn" data-action="set-conn-ov-page" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + '>‹</button>';
+    for (let p = 1; p <= totalPages; p++) {
+      pagination += '<button class="conn-ov-page-btn' + (p === page ? ' active' : '') + '" data-action="set-conn-ov-page" data-page="' + p + '">' + p + '</button>';
+    }
+    pagination += '<button class="conn-ov-page-btn" data-action="set-conn-ov-page" data-page="' + (page + 1) + '"' + (page >= totalPages ? ' disabled' : '') + '>›</button>'
+      + '</div></div>';
+  } else if (total > 0) {
+    pagination = '<div class="conn-ov-pagination"><span class="conn-ov-pagination-info">Hiển thị ' + total + ' thành viên</span></div>';
+  }
+
+  return table + pagination;
 }
 
 // ===== NETWORK (Bản đồ kết nối) =====
@@ -1580,37 +1977,7 @@ function networkPersonal() {
 
   const legend = buildNetworkLegendPersonal(accepted.length, pending.length);
 
-  let connectedListHtml = '';
-  if (total === 0) {
-    connectedListHtml = '<div class="empty">' + icon('link', 32)
-      + '<b>Chưa có kết nối nào</b>'
-      + '<p>Vào Smart Matching để kết nối ngay với các thành viên phù hợp.</p>'
-      + '<button class="btn btn-primary" data-action="nav" data-page="matches">' + icon('spark', 14) + ' Tìm người phù hợp</button>'
-      + '</div>';
-  } else {
-    connectedListHtml = '<div class="section-title" style="margin-top:20px"><h2>Danh sách kết nối của tôi (' + total + ')</h2><span>Chỉ hiển thị kết nối đang hoạt động từ Lark Base</span></div>'
-      + '<div class="member-roster-grid">'
-      + peers.map(p => {
-          const avHtml = memberAvatarHtml(p.peerAvatar, p.peerName, 44);
-          const isAcc = p.status === 'Accepted';
-          const canCancel = p.connObj && canCancelConnection(p.connObj);
-          return '<div class="member-roster-card" data-action="open-peer-node" data-id="' + esc(p.peerId) + '" data-conn-id="' + esc(p.connId) + '" style="cursor:pointer;' + (isAcc ? '' : 'opacity:0.75') + '">'
-            + avHtml
-            + '<div style="flex:1;min-width:0">'
-            + '<b style="display:block;font-size:13.5px">' + esc(p.peerName) + '</b>'
-            + '<small style="color:#64748b">' + esc(p.peerVillage || '—') + '</small>'
-            + '</div>'
-            + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'
-            + (isAcc
-                ? renderAcceptedBadgeOrCancelBtn({ connId: p.connId, label: p.peerName, type: 'personal', canCancel, small: true, iconSize: 12 })
-                : '<span class="conn-status-legacy">⏳ Chờ duyệt (cũ)</span>')
-            + '</div>'
-            + '</div>';
-        }).join('')
-      + '</div>';
-  }
-
-  return buildNetworkPage(togglePill, svgEl, caption, legend, connectedListHtml);
+  return buildNetworkPage(togglePill, svgEl, caption, legend, '');
 }
 
 // ===== NETWORK – Làng (dữ liệu Phiên chợ tri thức) =====
@@ -1665,6 +2032,15 @@ function networkVillage() {
     + '<linearGradient id="netline" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#f2c657"/><stop offset="1" stop-color="#59dccd"/></linearGradient>'
     + '<filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
     + '<filter id="centerGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
+    + '<marker id="vilArrowAcceptedEnd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
+    + '<path d="M 0 1.5 L 9 5 L 0 8.5 L 2.5 5 z" fill="#59dccd"/>'
+    + '</marker>'
+    + '<marker id="vilArrowAcceptedStart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
+    + '<path d="M 9 1.5 L 0 5 L 9 8.5 L 6.5 5 z" fill="#59dccd"/>'
+    + '</marker>'
+    + '<marker id="vilArrowPendingEnd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
+    + '<path d="M 0 1.5 L 9 5 L 0 8.5 L 2.5 5 z" fill="#f2c657"/>'
+    + '</marker>'
     + '</defs>';
 
   const orbits = '<ellipse cx="' + CX + '" cy="' + CY + '" rx="' + RX + '" ry="' + RY + '" fill="none" stroke="#ffffff14" stroke-width="1"/>'
@@ -1679,14 +2055,26 @@ function networkVillage() {
   const lines = activeLines.map(({ c, a, b }) => {
     const mx = (a.x + b.x) / 2 + (CX - (a.x + b.x) / 2) * 0.4;
     const my = (a.y + b.y) / 2 + (CY - (a.y + b.y) / 2) * 0.4;
-    return '<path d="M ' + a.x.toFixed(1) + ' ' + a.y.toFixed(1) + ' Q ' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' ' + b.x.toFixed(1) + ' ' + b.y.toFixed(1) + '" fill="none" stroke="url(#netline)" stroke-width="' + (c.status === 'Accepted' ? '3.5' : '2') + '"' + (c.status === 'Pending' ? ' stroke-dasharray="6 5"' : '') + ' opacity=".75" stroke-linecap="round"/>';
+    const angA = Math.atan2(my - a.y, mx - a.x);
+    const angB = Math.atan2(my - b.y, mx - b.x);
+    const offA = 46 + Math.max(0, Math.sin(angA) - 0.35) * 28;
+    const offB = 46 + Math.max(0, Math.sin(angB) - 0.35) * 28;
+    const sx = a.x + offA * Math.cos(angA);
+    const sy = a.y + offA * Math.sin(angA);
+    const ex = b.x + offB * Math.cos(angB);
+    const ey = b.y + offB * Math.sin(angB);
+    const isAcc = c.status === 'Accepted';
+    const markerAttrs = isAcc
+      ? ' marker-start="url(#vilArrowAcceptedStart)" marker-end="url(#vilArrowAcceptedEnd)"'
+      : ' marker-end="url(#vilArrowPendingEnd)"';
+    return '<path d="M ' + sx.toFixed(1) + ' ' + sy.toFixed(1) + ' Q ' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' ' + ex.toFixed(1) + ' ' + ey.toFixed(1) + '" fill="none" stroke="' + (isAcc ? 'url(#netline)' : '#f2c657') + '" stroke-width="' + (isAcc ? '3' : '2') + '"' + (isAcc ? '' : ' stroke-dasharray="6 5"') + ' opacity=".85" stroke-linecap="round"' + markerAttrs + '/>';
   }).join('');
 
   const nodes = villageNodes.map((v, i) => {
     const q = nodeCoord(i, villageNodes.length);
     const iconSrc = v.iconUrl || '';
     const shortName = esc((v.name || '').replace(/^\S+\s*/, ''));
-    return '<g filter="url(#nodeGlow)">'
+    return '<g data-action="open-village-node" data-id="' + esc(v.id) + '" style="cursor:pointer" filter="url(#nodeGlow)">'
       + '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="38" fill="#f8f4e8" stroke="#d4aa50" stroke-width="2.5"/>'
       + (iconSrc ? '<image x="' + (q.x - 32).toFixed(1) + '" y="' + (q.y - 32).toFixed(1) + '" width="64" height="64" href="' + esc(iconSrc) + '" clip-path="circle(32px at 32px 32px)" preserveAspectRatio="xMidYMid slice"/>'
         : '<text x="' + q.x.toFixed(1) + '" y="' + (q.y + 6).toFixed(1) + '" text-anchor="middle" fill="#1a3a6e" font-size="18" font-weight="900">AX</text>')
@@ -1703,28 +2091,14 @@ function networkVillage() {
     + defs + orbits + lines + badge + nodes + emptyOverlay + '</svg>';
 
   const hasLegacyPending = activeLines.some(({ c }) => c.status === 'Pending');
-  const caption = '<div class="network-bottom-caption">Đường nối lấy từ kết nối Làng–Làng trên Lark Base</div>';
+  const caption = '<div class="network-bottom-caption">Đường nối lấy từ kết nối Làng–Làng trên Lark Base · Nhấn vào Làng để xem các phiên chợ đã đăng ký</div>';
   const legend = '<div class="network-legend">'
     + '<span><i class="dot" style="background:#d4aa50"></i>' + villageNodes.length + ' Làng có gian hàng</span>'
     + '<span><i class="dot" style="background:#59dccd"></i>Đã kết nối</span>'
     + (hasLegacyPending ? '<span><i class="dot" style="background:#f2c657"></i>Chờ duyệt (cũ)</span>' : '')
     + '</div>';
 
-  const connectionSummary = '<div class="section-title" style="margin-top:24px"><h2>' + activeLines.length + ' kết nối Làng–Làng</h2><span>Dữ liệu kết nối từ Lark Base</span></div>'
-    + (activeLines.length
-      ? '<div class="grid2">' + activeLines.map(({ c }) => {
-          const isAcc = c.status === 'Accepted';
-          const peerLabel = getConnectionPeerLabel(c);
-          const canCancel = isAcc && canCancelConnection(c);
-          return '<div class="panel"><div class="row-flex" style="gap:8px;flex-wrap:wrap"><b>' + esc(c.sourceVillageName || c.sourceBooth?.villageName || 'Làng') + ' ↔ ' + esc(c.targetVillageName || c.targetBooth?.villageName || 'Làng') + '</b>'
-            + '<div style="display:flex;align-items:center;gap:6px;margin-left:auto">'
-            + (isAcc
-                ? renderAcceptedBadgeOrCancelBtn({ connId: c.id, label: peerLabel, type: 'village', canCancel, small: true, iconSize: 12 })
-                : '<span class="conn-status-legacy">⏳ Chờ duyệt (cũ)</span>')
-            + '</div></div><p>' + esc(c.topic || c.sourceBooth?.offer || c.sourceBooth?.need || 'Trao đổi tri thức') + '</p></div>';
-        }).join('') + '</div>'
-      : '<div class="empty">' + icon('network', 34) + '<b>Chưa có kết nối Làng–Làng</b><p>Khi hai Làng kết nối trên Phiên chợ tri thức, đường nối sẽ hiển thị tại đây.</p></div>');
-  return buildNetworkPage(buildNetworkTogglePill(false), svgEl, caption, legend, connectionSummary);
+  return buildNetworkPage(buildNetworkTogglePill(false), svgEl, caption, legend, '');
 }
 
 function openVillageConnectionsModal(boothId) {
@@ -1755,6 +2129,51 @@ function openVillageConnectionsModal(boothId) {
     'Làng tham gia phiên này (' + connections.length + ')',
     body,
     '<button class="btn" data-action="close-modal">Đóng</button>'
+  );
+}
+
+function openVillageBoothsModal(villageId) {
+  const village = (LIVE.villages || []).find(v => v.id === villageId);
+  const villageName = village?.name || villageId || 'Làng';
+  const booths = (LIVE.booths || []).filter(b => {
+    if (b.boothType !== 'village') return false;
+    if (villageId && b.villageId === villageId) return true;
+    return village?.name && (b.villageName === village.name || b.authorVillageName === village.name);
+  });
+
+  const headerHtml = '<div class="person-head" style="margin-bottom:16px;display:flex;align-items:center;gap:12px">'
+    + villageLogoHtml(village?.iconUrl, villageName, 56)
+    + '<div style="flex:1;min-width:0"><b style="font-size:16px">' + esc(villageName) + '</b>'
+    + '<small style="display:block;color:#64748b">' + esc(village?.office || '—')
+    + (village?.leader ? ' · Trưởng làng: ' + esc(village.leader) : '') + '</small></div>'
+    + '<span class="kind-tag" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe">' + booths.length + ' phiên chợ</span>'
+    + '</div>';
+
+  const listHtml = booths.length
+    ? '<div style="display:flex;flex-direction:column;gap:12px">'
+      + booths.map(b => {
+          const slotText = formatPreferredSlot(b.availability);
+          const dateText = b.createdAt ? new Date(b.createdAt).toLocaleDateString('vi-VN') : '';
+          return '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;background:#f8fafc">'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">'
+            + '<span class="kind-tag" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe">' + esc(b.boothId || 'LÀNG') + '</span>'
+            + '<small style="color:#64748b">Đăng ký bởi: <b style="color:#0f172a">' + esc(b.authorName || 'Thành viên') + '</b>' + (dateText ? ' · ' + esc(dateText) : '') + '</small>'
+            + '</div>'
+            + '<div class="kv"><span>Có thể chia sẻ</span><b>' + esc(b.offer || 'Chưa cập nhật') + (b.offerTag ? ' <span class="tag teal" style="margin-left:4px">' + esc(b.offerTag) + '</span>' : '') + '</b></div>'
+            + '<div class="kv"><span>Muốn học</span><b>' + esc(b.need || 'Chưa cập nhật') + (b.needTag ? ' <span class="tag gold" style="margin-left:4px">' + esc(b.needTag) + '</span>' : '') + '</b></div>'
+            + (b.preferredFormat ? '<div class="kv"><span>Hình thức</span><b>' + esc(b.preferredFormat) + '</b></div>' : '')
+            + (slotText ? '<div class="kv"><span>Khung giờ ưu tiên</span><b>' + esc(slotText) + '</b></div>' : '')
+            + (b.outcome ? '<div class="kv"><span>Kết quả mong muốn</span><b>' + esc(b.outcome) + '</b></div>' : '')
+            + '</div>';
+        }).join('')
+      + '</div>'
+    : '<div class="empty"><b>Chưa có phiên chợ nào</b><p>Làng này chưa đăng ký gian hàng Làng trên Phiên chợ tri thức.</p></div>';
+
+  openModal(
+    'Phiên chợ tri thức · ' + esc(villageName),
+    headerHtml + listHtml,
+    '<button type="button" class="btn" data-action="close-modal">Đóng</button>'
+    + '<button type="button" class="btn btn-primary" data-action="open-village-market">' + icon('network', 14) + ' Xem Gian hàng Làng</button>'
   );
 }
 
@@ -3073,7 +3492,7 @@ function render() {
   if (topTit) topTit.textContent = PAGE_LABELS[currentPage][1];
   const viewEl = document.querySelector('#view');
   if (viewEl) {
-    let body = { home, villages: liveVillagesPage, members: liveMembersPage, market, matches, network, schedule, library, awards: honors, gate1, forms, settings }[currentPage]();
+    let body = { home, villages: liveVillagesPage, members: liveMembersPage, market, matches, network, 'connection-detail': connectionDetail, schedule, library, awards: honors, gate1, forms, settings }[currentPage]();
     viewEl.innerHTML = body + footer();
   }
   const sidebar = document.querySelector('#sidebar');
@@ -3378,7 +3797,11 @@ window.addEventListener('click', e => {
   const a = b.dataset.action, id = b.dataset.id;
   switch (a) {
     case 'nav': navigate(b.dataset.page); break;
-    case 'open-village-market': marketTab = 'village'; navigate('market'); break;
+    case 'toggle-nav-group':
+      navNetworkGroupOpen = !navNetworkGroupOpen;
+      renderNav();
+      break;
+    case 'open-village-market': closeModal(); marketTab = 'village'; navigate('market'); break;
     case 'forms': navigate('forms'); break;
     case 'settings': navigate('settings'); break;
     case 'mobile-menu': document.querySelector('#sidebar').classList.toggle('show'); break;
@@ -3484,6 +3907,10 @@ window.addEventListener('click', e => {
       openPeerBoothModal(peerId, b.dataset.connId);
       break;
     }
+    case 'open-village-node': {
+      openVillageBoothsModal(id);
+      break;
+    }
     case 'create-live-match':
       createLiveMatch(Number(b.dataset.idx));
       break;
@@ -3492,6 +3919,11 @@ window.addEventListener('click', e => {
       break;
     case 'set-conn-tab':
       connectionsActiveTab = b.dataset.tab || 'accepted';
+      connectionsPage = 1;
+      if (currentPage === 'matches') render();
+      break;
+    case 'set-conn-page':
+      connectionsPage = Math.max(1, Number(b.dataset.page) || 1);
       if (currentPage === 'matches') render();
       break;
     case 'refresh-connections': {
@@ -3523,6 +3955,12 @@ window.addEventListener('click', e => {
         });
       break;
     }
+    case 'prompt-delete-booth':
+      openDeleteBoothModal(id);
+      break;
+    case 'confirm-delete-booth':
+      confirmDeleteBooth(id);
+      break;
     case 'prompt-cancel-connection': {
       openCancelConnectionModal({
         connId: b.dataset.id,
@@ -3555,6 +3993,38 @@ window.addEventListener('click', e => {
         targetLabel: conn ? getConnectionPeerLabel(conn) : '',
         connectionType: conn?.connectionType || 'personal',
       });
+      break;
+    }
+    // ===== CONNECTIONS OVERVIEW ACTIONS =====
+    case 'reload-conn-overview':
+      connOverview = { loading: false, error: '', data: null };
+      loadConnectionsOverview();
+      break;
+    case 'toggle-conn-ov-row': {
+      const rowId = b.dataset.id;
+      connOverviewExpandedId = connOverviewExpandedId === rowId ? null : rowId;
+      connOverviewBoothExpandedId = null;
+      const ovBody = document.getElementById('connOvBody');
+      if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
+      else if (currentPage === 'connection-detail') render();
+      break;
+    }
+    case 'set-conn-ov-page': {
+      const p = parseInt(b.dataset.page, 10);
+      if (!isNaN(p) && p >= 1) {
+        connOverviewPage = p;
+        const ovBody = document.getElementById('connOvBody');
+        if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
+        else if (currentPage === 'connection-detail') render();
+      }
+      break;
+    }
+    case 'toggle-conn-booth': {
+      const bk = b.dataset.id;
+      connOverviewBoothExpandedId = connOverviewBoothExpandedId === bk ? null : bk;
+      const ovBody = document.getElementById('connOvBody');
+      if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
+      else if (currentPage === 'connection-detail') render();
       break;
     }
     case 'set-network-mode':
@@ -3636,8 +4106,38 @@ document.addEventListener('change', e => {
   if (e.target.id === 'villageSeekerSelect') { STATE.villageSeeker = e.target.value; persist(); render() }
   if (e.target.id === 'officeFilter') { officeFilter = e.target.value; render() }
   if (e.target.id === 'liveMemberOffice') { liveMemberOffice = e.target.value; render() }
+  if (e.target.id === 'connOvVillage') {
+    connOverviewVillage = e.target.value || 'all';
+    connOverviewPage = 1;
+    const ovBody = document.getElementById('connOvBody');
+    if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
+    else if (currentPage === 'connection-detail') render();
+  }
+  if (e.target.id === 'connOvSort') {
+    connOverviewSort = e.target.value || 'most';
+    connOverviewPage = 1;
+    const ovBody = document.getElementById('connOvBody');
+    if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
+    else if (currentPage === 'connection-detail') render();
+  }
+  if (e.target.id === 'connOvNoConn') {
+    connOverviewNoConn = Boolean(e.target.checked);
+    connOverviewPage = 1;
+    const ovBody = document.getElementById('connOvBody');
+    if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
+    else if (currentPage === 'connection-detail') render();
+  }
 });
 document.addEventListener('input', e => { if (e.target.id === 'liveMemberSearch') { liveMemberSearch = e.target.value; const grid = document.querySelector('#liveMemberGrid'); if (grid) grid.innerHTML = liveMemberCards(); const count = document.querySelector('#liveMemberCount'); if (count) count.textContent = 'Đang hiển thị ' + matchingMembers().length + '/' + LIVE.members.length + ' thành viên'; } if (e.target.id === 'marketSearch') { marketSearch = e.target.value; if (currentPage === 'market') render(); } });
+document.addEventListener('input', e => {
+  if (e.target.id === 'connOvSearch') {
+    connOverviewSearch = e.target.value;
+    connOverviewPage = 1;
+    const ovBody = document.getElementById('connOvBody');
+    if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
+    else if (currentPage === 'connection-detail') render();
+  }
+});
 document.addEventListener('input', e => {
   if (e.target.id === 'knowledgeSearch') {
     librarySearch = e.target.value;

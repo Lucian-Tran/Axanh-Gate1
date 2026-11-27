@@ -258,6 +258,26 @@
     return result;
   }
 
+  async function deleteBooth(id) {
+    const response = await fetch(`/api/v1/booths/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    if (response.status === 401) {
+      throw Object.assign(new Error('Phiên đăng nhập hết hạn.'), { status: 401 });
+    }
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw Object.assign(
+        new Error(result.error || `Xóa gian hàng thất bại (HTTP ${response.status}).`),
+        { status: response.status }
+      );
+    }
+    return result;
+  }
+
   async function syncBooths() {
     const response = await fetch('/api/v1/booths/sync', {
       method: 'POST',
@@ -328,6 +348,7 @@
     getMyBooths,
     createBooth,
     updateBooth,
+    deleteBooth,
     syncBooths,
     getMatchingContext,
     getMatchingSuggestions,
@@ -544,6 +565,19 @@
     async submitLearningResult(id, data) {
       return learningRequest(`/api/v1/learning-sessions/${encodeURIComponent(id)}/results`, 'POST', data);
     },
+    async getConnectionsOverview() {
+      const response = await fetch('/api/v1/connections/overview', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+      if (response.status === 401) throw Object.assign(new Error('Phiên đăng nhập hết hạn.'), { status: 401 });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Lỗi tải tổng quan kết nối (HTTP ${response.status}).`);
+      return result;
+    },
+
     // Legacy compat – kept for ApiAdapter but not used in main init flow
     async load() {
       const me = await getMe();

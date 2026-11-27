@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { LarkClient } from './lark-client.js';
-import { buildVillageIndex, mapVillage, mapMember, mapBooth, extractLoginEmail, textValue, personName, isOfficialVillage, isOfficialMember } from './mappers.js';
+import { buildVillageIndex, mapVillage, mapMember, mapBooth, extractLoginEmail, textValue, personName, linkedRecordIds, isOfficialVillage, isOfficialMember } from './mappers.js';
 import { createVillageIconService } from './village-icon-service.js';
 import { createMemberAvatarService } from './member-avatar-service.js';
 import { createAuthStore } from './auth-store.js';
@@ -1367,7 +1367,7 @@ export function createAppServer(config, lark = new LarkClient(config), options =
     }
 
     const boothPatchMatch = /^\/api\/v1\/booths\/([A-Za-z0-9_-]{10,64})$/.exec(url.pathname);
-    if (boothPatchMatch && req.method === 'PATCH') {
+    if (boothPatchMatch && (req.method === 'PATCH' || req.method === 'DELETE')) {
       const recordId = boothPatchMatch[1];
       const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
       if (!hasTestKey && (!isAllowedWriteRequest(req, config))) {
@@ -1399,8 +1399,44 @@ export function createAppServer(config, lark = new LarkClient(config), options =
       if (!isOwner && !isAdmin) {
         return reply(res, 403, {
           success: false,
-          error: 'Bạn không có quyền chỉnh sửa gian hàng này.',
+          error: req.method === 'DELETE'
+            ? 'Bạn không có quyền xóa gian hàng này.'
+            : 'Bạn không có quyền chỉnh sửa gian hàng này.',
         });
+      }
+
+      if (req.method === 'DELETE') {
+        try {
+          const rawConns = await connectionService.getConnectionsRaw(true);
+          const hasActiveConn = rawConns.some((c) => {
+            const st = textValue(c.fields?.Connection_Status) || 'Pending';
+            if (st !== 'Accepted' && st !== 'Pending') return false;
+            const srcIds = linkedRecordIds(c.fields?.Source_Booth);
+            const tgtIds = linkedRecordIds(c.fields?.Target_Booth);
+            return srcIds.includes(recordId) || tgtIds.includes(recordId);
+          });
+          if (hasActiveConn) {
+            return reply(res, 409, {
+              success: false,
+              error: 'Gian hàng này đang có kết nối hoạt động hoặc chờ duyệt. Vui lòng hủy kết nối trước khi xóa gian hàng.',
+            });
+          }
+
+          await lark.deleteRecord(config.boothTableId, recordId);
+          cached.delete('booth-raw');
+          connectionService.invalidateCache();
+          honorsService.invalidateCache();
+          authStore?.unregisterBooth(recordId);
+
+          return reply(res, 200, {
+            success: true,
+            message: 'Đã xóa gian hàng khỏi Phiên chợ tri thức!',
+            recordId,
+          });
+        } catch (err) {
+          console.error('[Booths API] Error deleting booth in Lark:', err.message);
+          return reply(res, 502, { success: false, error: 'Không thể xóa gian hàng trên Lark Base. Vui lòng thử lại.' });
+        }
       }
 
       let body;
@@ -1469,6 +1505,102 @@ export function createAppServer(config, lark = new LarkClient(config), options =
       } catch (err) {
         console.error('[Booths API] Error updating booth in Lark:', err.message);
         return reply(res, 502, { success: false, error: 'Không thể cập nhật gian hàng lên Lark Base.' });
+      }
+    }
+
+    // GET /api/v1/connections/overview – Chi tiết kết nối toàn hệ thống
+    if (url.pathname === '/api/v1/connections/overview' && req.method === 'GET') {
+      const session = getSession(req, sessions, authStore);
+      const hasTestKey = (DEV_AUTH_ENABLED && isLocalRequest(req) && sameKey(req.headers['x-internal-test-key'], config.testKey));
+      if (!session && !hasTestKey) return reply(res, 401, { success: false, error: 'Unauthorized' });
+
+      const isPrivileged = hasTestKey || canManageMatching(session, config);
+      const myMemberId = session?.user?.memberId || session?.user?.id || null;
+
+      try {
+        // Lấy members, booths và connections song song
+        const { map: membersByName, villagesByName } = await getMembersByNameIndex();
+        const [allMembers, rawConnItems, rawBoothsList] = await Promise.all([
+          getAllMappedMembers(),
+          connectionService.listConnections({ sessionUser: session?.user, isAdmin: true, scope: 'all' }),
+          boothsRaw(),
+        ]);
+        const booths = rawBoothsList.map((r) => mapBooth(r, membersByName, villagesByName));
+        const boothByRecordId = new Map(booths.map((b) => [b.recordId, b]));
+        const boothById = new Map(booths.map((b) => [b.boothId, b]));
+
+        // Chỉ lấy kết nối personal + Accepted
+        const conns = (rawConnItems.items || []).filter(
+          (c) => c.connectionType === 'personal' && c.status === 'Accepted'
+        );
+
+        // Build peerMap: memberId → { peers: Set, conns: [] }
+        const peerMap = new Map();
+        conns.forEach((c) => {
+          const a = c.requestedBy || c.sourceBooth?.authorMemberId;
+          const b = c.targetMemberId || c.targetBooth?.authorMemberId;
+          if (!a || !b || a === b) return;
+          for (const [self, other] of [[a, b], [b, a]]) {
+            if (!peerMap.has(self)) peerMap.set(self, { peers: new Set(), conns: [] });
+            const entry = peerMap.get(self);
+            entry.peers.add(other);
+            entry.conns.push(c);
+          }
+        });
+
+        // Nếu không phải admin → chỉ trả item của chính user
+        const membersToReturn = isPrivileged
+          ? allMembers
+          : allMembers.filter((m) => m.id === myMemberId || m.memberId === myMemberId);
+
+        const memberMap = new Map(allMembers.map((m) => [m.id, m]));
+
+        const items = membersToReturn.map((m) => {
+          const entry = peerMap.get(m.id) || { peers: new Set(), conns: [] };
+          const connectedPeers = [...entry.peers].map((peerId) => {
+            const peer = memberMap.get(peerId);
+            const peerConns = entry.conns.filter((c) => {
+              const a = c.requestedBy || c.sourceBooth?.authorMemberId;
+              const b = c.targetMemberId || c.targetBooth?.authorMemberId;
+              return (a === m.id && b === peerId) || (a === peerId && b === m.id);
+            });
+            const relatedBooths = peerConns.flatMap((c) => {
+              const srcBooth = (c.sourceBoothRecordId ? boothByRecordId.get(c.sourceBoothRecordId) : null)
+                || (c.sourceBooth?.boothId ? boothById.get(c.sourceBooth.boothId) : null);
+              const tgtBooth = (c.targetBoothRecordId ? boothByRecordId.get(c.targetBoothRecordId) : null)
+                || (c.targetBooth?.boothId ? boothById.get(c.targetBooth.boothId) : null);
+              return [srcBooth, tgtBooth].filter(Boolean);
+            }).filter((b, idx, arr) => arr.findIndex((x) => x?.boothId === b?.boothId) === idx);
+            return {
+              memberId: peerId,
+              name: peer?.name || peerId,
+              villageName: peer?.villageName || '',
+              villageId: peer?.villageId || null,
+              avatarUrl: peer?.avatarUrl || null,
+              relatedBooths: relatedBooths.map((b) => ({
+                boothId: b.boothId,
+                offer: b.offer || '',
+                offerTag: b.offerTag || '',
+                need: b.need || '',
+              })),
+            };
+          });
+          return {
+            memberId: m.id,
+            name: m.name,
+            villageName: m.villageName || '',
+            villageId: m.villageId || null,
+            avatarUrl: m.avatarUrl || null,
+            office: m.office || '',
+            connectedCount: entry.peers.size,
+            connectedPeers,
+          };
+        });
+
+        return reply(res, 200, { success: true, isPrivileged, count: items.length, items });
+      } catch (err) {
+        console.error('[Overview API] Error:', err.message);
+        return reply(res, 502, { success: false, error: 'Không thể tải dữ liệu kết nối tổng quan.' });
       }
     }
 
