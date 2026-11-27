@@ -18,7 +18,7 @@ const DEFAULT_GATE1_ENTRIES = [
 ];
 function freshGateEntries() { return JSON.parse(JSON.stringify(DEFAULT_GATE1_ENTRIES)) }
 
-const PAGE_LABELS = { home: ['Tổng quan', 'Phiên chợ tri thức'], villages: ['Lark Base', '11 Làng AXANH'], members: ['Thành viên làng', 'Danh sách thành viên'], market: ['Gian hàng', 'Khám phá tri thức'], matches: ['Kết nối', 'Smart Matching'], network: ['Mạng lưới kết nối', 'Bản đồ kết nối'], 'connection-detail': ['Mạng lưới kết nối', 'Chi tiết kết nối toàn hệ thống'], schedule: ['Hoạt động', 'Lịch cùng học'], library: ['Tri thức', 'Thư viện chung'], awards: ['Ghi nhận', 'Vinh danh tri thức'], gate1: ['Gate 1', 'Điều kiện Quán quân'], forms: ['Biểu mẫu', 'Đăng ký & báo cáo'], settings: ['Hệ thống', 'Lark & API'] };
+const PAGE_LABELS = { home: ['Tổng quan', 'Phiên chợ tri thức'], villages: ['Lark Base', '11 Làng AXANH'], members: ['Thành viên làng', 'Danh sách thành viên'], market: ['Gian hàng', 'Khám phá tri thức'], matches: ['Kết nối', 'Smart Matching'], network: ['Mạng lưới kết nối', 'Bản đồ kết nối'], 'connection-detail': ['Mạng lưới kết nối', 'Chi tiết kết nối toàn hệ thống'], schedule: ['Lịch cùng học', 'Lịch học của tôi'], 'schedule-all': ['Lịch cùng học', 'Lịch học toàn AXANH'], 'learning-history': ['Lịch cùng học', 'Lịch sử học tập'], library: ['Tri thức', 'Thư viện chung'], awards: ['Ghi nhận', 'Vinh danh tri thức'], gate1: ['Gate 1', 'Điều kiện Quán quân'], forms: ['Biểu mẫu', 'Đăng ký & báo cáo'], settings: ['Hệ thống', 'Lark & API'] };
 const NAV = [
   ['home', 'Tổng quan', 'home'],
   ['villages', 'Danh sách 11 Làng', 'grid'],
@@ -31,16 +31,28 @@ const NAV = [
     icon: 'network',
     children: [
       ['network', 'Bản đồ kết nối', 'network'],
-      ['connection-detail', 'Chi tiết kết nối', 'users', { requiresOverviewAccess: true }],
+      ['connection-detail', 'Chi tiết kết nối', 'users'],
     ],
   },
-  ['schedule', 'Lịch cùng học', 'calendar'],
+  {
+    group: 'learning-hub',
+    label: 'Lịch cùng học',
+    icon: 'calendar',
+    children: [
+      ['schedule', 'Lịch học của tôi', 'calendar'],
+      ['schedule-all', 'Lịch học toàn AXANH', 'users'],
+      ['learning-history', 'Lịch sử học tập', 'clock'],
+    ],
+  },
   ['library', 'Kho tri thức', 'book'],
   ['awards', 'Vinh danh', 'award'],
   ['gate1', 'Gate 1 Quán quân', 'shield'],
   ['forms', 'Hai biểu mẫu', 'form'],
 ];
-let navNetworkGroupOpen = false;
+const navOpenGroups = { 'network-hub': false, 'learning-hub': false };
+let learningHistoryTab = 'mine'; // 'mine' | 'all'
+let learningHistorySearch = '';
+let honorsTab = 'individuals'; // 'individuals' | 'villages'
 const EMPTY_STATE = { profiles: {}, connections: [], results: [], gate1: freshGateEntries(), settings: { registrationUrl: '', resultUrl: '', gate1Url: '', apiBase: '', larkBase: DEFAULT_BASE }, seeker: 'VIL-0005', matchMode: 'person', villageSeeker: '' };
 let STATE = loadState(); let currentPage = 'home'; let marketSearch = ''; let officeFilter = 'all'; let __modalAction = null;
 const LIVE = { loading: true, connected: false, error: '', villages: [], members: [], booths: [], boothsLoading: false, boothsError: '', currentUser: null, connections: [], inboxConnections: [], notificationCount: 0, connectionsLoading: false, connectionsError: '', learning: { loading: false, error: '', sessions: [], availableConnections: [], reportOptions: { applied: [], formats: [] } }, knowledge: { loading: false, error: '', items: [], diagnostics: {} }, honors: { loading: false, error: '', data: null } };
@@ -112,6 +124,9 @@ function connModalText(c) {
 }
 function toast(m, t = 'good') { const e = document.createElement('div'); e.className = 'toast ' + t; e.textContent = m; document.querySelector('#toasts').appendChild(e); setTimeout(() => e.remove(), 4100) }
 function validLink(s) { try { const u = new URL(s); return ['https:', 'http:'].includes(u.protocol) } catch (e) { return false } }
+function isLearningPage(page = currentPage) {
+  return ['schedule', 'schedule-all', 'learning-history'].includes(page);
+}
 function navigate(page) {
   currentPage = PAGE_LABELS[page] ? page : 'home';
   if (page === 'settings' && !LIVE.currentUser?.isAdmin) {
@@ -120,21 +135,17 @@ function navigate(page) {
     return;
   }
   if (currentPage === 'connection-detail') {
-    const canSee = LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin;
-    if (LIVE.currentUser && !canSee) {
-      currentPage = 'network';
-    } else {
-      navNetworkGroupOpen = true;
-      loadConnectionsOverview();
-    }
+    navOpenGroups['network-hub'] = true;
+    loadConnectionsOverview();
   }
   if (currentPage === 'network') {
-    navNetworkGroupOpen = true;
+    navOpenGroups['network-hub'] = true;
   }
   if (currentPage === 'matches') {
     loadMatching();
   }
-  if (currentPage === 'schedule') {
+  if (isLearningPage(currentPage)) {
+    navOpenGroups['learning-hub'] = true;
     loadLearningData();
   }
   if (currentPage === 'library') {
@@ -170,7 +181,6 @@ function navigate(page) {
 }
 function pageHeader(title, desc, action = '') { return '<div class="page-header"><div><div class="eyebrow">AXANH / ATED PRO</div><h1 class="page-title">' + esc(title) + '</h1>' + (desc ? '<p class="page-desc">' + desc + '</p>' : '') + '</div>' + action + '</div>' }
 function renderNav() {
-  const canSeeOverview = Boolean(LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin);
   const systemNav = LIVE.currentUser?.isAdmin
     ? '<div class="nav-section">HỆ THỐNG</div><nav class="nav"><button type="button" data-action="nav" data-page="settings" class="' + (currentPage === 'settings' ? 'active' : '') + '">' + icon('settings') + ' Cấu hình tích hợp</button></nav>'
     : '';
@@ -179,9 +189,9 @@ function renderNav() {
       const [id, l, ico] = item;
       return '<button type="button" data-action="nav" data-page="' + id + '" class="' + (currentPage === id ? 'active' : '') + '"><span class="nav-ico">' + icon(ico) + '</span>' + l + '</button>';
     }
-    const visibleChildren = item.children.filter(([, , , opts]) => !opts?.requiresOverviewAccess || canSeeOverview);
+    const visibleChildren = item.children;
     const hasActiveChild = visibleChildren.some(([cid]) => cid === currentPage);
-    const isOpen = navNetworkGroupOpen || hasActiveChild;
+    const isOpen = Boolean(navOpenGroups[item.group]);
     return '<div class="nav-group' + (isOpen ? ' open' : '') + '">'
       + '<button type="button" data-action="toggle-nav-group" data-group="' + item.group + '" class="nav-group-btn' + (hasActiveChild ? ' has-active' : '') + '">'
       + '<span class="nav-ico">' + icon(item.icon) + '</span>'
@@ -1549,12 +1559,11 @@ async function loadConnectionsOverview() {
 }
 
 function connectionDetail() {
-  const canSee = LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin;
-  if (!canSee) {
-    return '<div class="empty">' + icon('shield', 32)
-      + '<b>Không có quyền truy cập</b>'
-      + '<p>Trang Chi tiết kết nối toàn hệ thống chỉ dành cho Ban tổ chức / Quản trị viên.</p>'
-      + '<button class="btn btn-primary" data-action="nav" data-page="network">Về Bản đồ kết nối</button>'
+  if (!LIVE.currentUser) {
+    return '<div class="empty">' + icon('users', 32)
+      + '<b>Bạn chưa đăng nhập</b>'
+      + '<p>Vui lòng đăng nhập để xem chi tiết kết nối toàn hệ thống.</p>'
+      + '<button class="btn btn-primary" data-action="re-login">Đăng nhập ngay</button>'
       + '</div>';
   }
   return renderConnectionsOverview();
@@ -1567,8 +1576,7 @@ function normStr(s) {
 }
 
 function renderConnectionsOverview() {
-  const canSee = LIVE.currentUser?.capabilities?.matchingManage || LIVE.currentUser?.isAdmin;
-  if (!canSee) return '';
+  if (!LIVE.currentUser) return '';
 
   // Auto-load nếu chưa có data
   if (!connOverview.data && !connOverview.loading && !connOverview.error) {
@@ -2335,9 +2343,9 @@ function learningGroup(title, sessions) {
     + sessions.map(learningSessionCard).join('') + '</section>';
 }
 
-function schedule() {
+function renderScheduleBoard({ title, sessions, emptyTitle, emptyDesc, showAvailableBanner = false }) {
   const learning = LIVE.learning;
-  const header = pageHeader('Lịch cùng học', '',
+  const header = pageHeader(title, '',
     '<button class="btn btn-primary" data-action="learning-create">' + icon('plus') + ' Đặt lịch học</button>');
   if (learning.loading) return header + '<div class="status-banner">Đang tải lịch học từ Lark Base…</div>';
   if (learning.error) {
@@ -2345,21 +2353,182 @@ function schedule() {
       + ' <button class="btn small" data-action="learning-refresh">Thử lại</button></div>';
   }
   const now = Date.now();
-  const sessions = learning.sessions || [];
   const upcoming = sessions.filter(item => item.status === 'Confirmed' && item.endAt > now);
   const pending = sessions.filter(item => item.status === 'Proposed');
   const elapsed = sessions.filter(item => item.status === 'Confirmed' && item.endAt <= now);
-  const history = sessions.filter(item => ['Completed', 'Cancelled'].includes(item.status));
   const content = learningGroup('Lịch sắp tới', upcoming)
     + learningGroup('Chờ xác nhận', pending)
-    + learningGroup('Đã qua thời gian dự kiến', elapsed)
-    + learningGroup('Lịch sử học tập', history);
+    + learningGroup('Đã qua thời gian dự kiến', elapsed);
   return header
-    + (!learning.availableConnections.length
+    + (showAvailableBanner && !learning.availableConnections.length
       ? '<div class="status-banner" style="margin-top:14px">Chưa có kết nối Lark Base ở trạng thái Accepted mà bạn có quyền tham gia.</div>'
       : '')
-    + (content || '<div class="empty">' + icon('calendar', 38) + '<b>Chưa có buổi học</b><p>Đặt lịch từ một kết nối đã được chấp nhận.</p></div>')
+    + (content || '<div class="empty">' + icon('calendar', 38) + '<b>' + esc(emptyTitle) + '</b><p>' + esc(emptyDesc) + '</p></div>')
     + '<p class="muted" style="margin-top:16px">Lịch đã qua giờ kết thúc không tự chuyển sang hoàn thành. Một người tham gia cần xác nhận buổi học đã diễn ra.</p>';
+}
+
+function schedule() {
+  const mySessions = (LIVE.learning.sessions || []).filter(item => item.isParticipant);
+  return renderScheduleBoard({
+    title: 'Lịch học của tôi',
+    sessions: mySessions,
+    emptyTitle: 'Chưa có buổi học nào của bạn',
+    emptyDesc: 'Đặt lịch từ một kết nối đã được chấp nhận hoặc xem toàn bộ ở Lịch học toàn AXANH.',
+    showAvailableBanner: true,
+  });
+}
+
+function scheduleAll() {
+  const allSessions = LIVE.learning.sessions || [];
+  return renderScheduleBoard({
+    title: 'Lịch học toàn AXANH',
+    sessions: allSessions,
+    emptyTitle: 'Chưa có buổi học nào trên hệ thống',
+    emptyDesc: 'Khi các thành viên hoặc Làng đặt lịch cùng học, lịch sẽ hiển thị tại đây.',
+    showAvailableBanner: false,
+  });
+}
+
+function formatLearningDateOnly(timestamp) {
+  if (!timestamp) return '—';
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(timestamp);
+}
+
+function formatHoursLabel(totalMinutes) {
+  const hrs = Math.round((totalMinutes / 60) * 10) / 10;
+  return (Number.isInteger(hrs) ? String(hrs) : String(hrs).replace('.', ',')) + ' giờ';
+}
+
+function getLearningHistoryStatsAndItems() {
+  const allSessions = LIVE.learning.sessions || [];
+  const isMine = learningHistoryTab === 'mine';
+  const completed = allSessions
+    .filter(s => s.status === 'Completed' && (!isMine || s.isParticipant))
+    .sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0));
+
+  const totalMinutes = completed.reduce((sum, s) => {
+    const mins = (s.startAt && s.endAt && s.endAt > s.startAt) ? Math.round((s.endAt - s.startAt) / 60000) : 0;
+    return sum + mins;
+  }, 0);
+
+  const reportedCount = isMine
+    ? completed.filter(s => s.hasReported).length
+    : completed.reduce((sum, s) => sum + (s.reportCount || (s.hasReported ? 1 : 0)), 0);
+
+  const q = normStr(learningHistorySearch.trim());
+  const filtered = q
+    ? completed.filter(s => {
+        if (normStr(s.title).includes(q)) return true;
+        if (normStr(s.connectionLabel).includes(q)) return true;
+        if (Array.isArray(s.participants) && s.participants.some(p => normStr(p).includes(q))) return true;
+        return false;
+      })
+    : completed;
+
+  return {
+    totalCompleted: completed.length,
+    totalHoursLabel: formatHoursLabel(totalMinutes),
+    reportedCount,
+    items: filtered,
+  };
+}
+
+function renderLearningHistoryList() {
+  const { items } = getLearningHistoryStatsAndItems();
+  const isMine = learningHistoryTab === 'mine';
+  if (!items.length) {
+    return '<div class="empty">' + icon('clock', 36)
+      + '<b>Chưa có buổi học đã hoàn thành</b>'
+      + '<p>' + (learningHistorySearch.trim()
+        ? 'Không tìm thấy buổi học phù hợp với từ khóa tìm kiếm.'
+        : (isMine ? 'Khi bạn hoàn thành buổi học, lịch sử và báo cáo Form 02 sẽ hiển thị tại đây.' : 'Chưa có buổi học nào hoàn thành trên toàn hệ thống.'))
+      + '</p></div>';
+  }
+  return '<div class="lh-list">' + items.map(s => {
+    const mins = (s.startAt && s.endAt && s.endAt > s.startAt) ? Math.round((s.endAt - s.startAt) / 60000) : 0;
+    const isReported = isMine ? Boolean(s.hasReported) : Boolean((s.reportCount || 0) > 0 || s.hasReported);
+    const canView = Boolean(s.permissions?.canViewResults || s.isParticipant || LIVE.currentUser?.isAdmin);
+    const canSubmitForm2 = Boolean(s.isParticipant && s.permissions?.canReport && !s.hasReported);
+
+    let rightBtn = '';
+    if (isReported && canView) {
+      const btnText = (isMine || s.hasReported) ? 'Xem báo cáo của tôi' : 'Xem báo cáo';
+      rightBtn = '<button type="button" class="btn small" data-action="learning-results" data-id="' + esc(s.id) + '">' + btnText + '</button>';
+    } else if (!isReported && canSubmitForm2) {
+      rightBtn = '<button type="button" class="btn small btn-primary" data-action="learning-report" data-id="' + esc(s.id) + '">Nộp Form 02</button>';
+    } else if (isMine && !s.hasReported && s.permissions?.canReport) {
+      rightBtn = '<button type="button" class="btn small btn-primary" data-action="learning-report" data-id="' + esc(s.id) + '">Nộp Form 02</button>';
+    }
+
+    const statusHtml = isReported
+      ? '<span class="lh-status lh-status-done">✓ Đã nộp báo cáo' + (!isMine && (s.reportCount || 0) > 1 ? ' (' + s.reportCount + ')' : '') + '</span>'
+      : '<span class="lh-status lh-status-pending">Chưa nộp báo cáo</span>';
+
+    return '<article class="lh-card">'
+      + '<div class="lh-card-head">'
+      + '<div class="lh-card-title-wrap">'
+      + '<h3 class="lh-card-title">' + esc(s.title || 'Buổi học') + '</h3>'
+      + '<div class="lh-card-pair">' + esc(s.connectionLabel || (s.participants || []).join(' ↔ ')) + '</div>'
+      + '<div class="lh-card-meta">'
+      + '<span>' + icon('calendar', 14) + ' ' + esc(formatLearningDateOnly(s.startAt)) + '</span>'
+      + (mins > 0 ? '<span>' + icon('clock', 14) + ' ' + mins + ' phút</span>' : '')
+      + '</div>'
+      + '</div>'
+      + '<span class="lh-check-badge" title="Đã hoàn thành">' + icon('checkCircle', 18) + '</span>'
+      + '</div>'
+      + '<div class="lh-card-foot">'
+      + statusHtml
+      + rightBtn
+      + '</div>'
+      + '</article>';
+  }).join('') + '</div>';
+}
+
+function learningHistory() {
+  const learning = LIVE.learning;
+  const header = pageHeader('Lịch sử học tập', 'Theo dõi các buổi học đã hoàn thành và tình trạng nộp báo cáo Form 02', '');
+  if (learning.loading) return header + '<div class="status-banner">Đang tải lịch sử học tập từ Lark Base…</div>';
+  if (learning.error) {
+    return header + '<div class="status-banner">' + icon('info') + ' ' + esc(learning.error)
+      + ' <button class="btn small" data-action="learning-refresh">Thử lại</button></div>';
+  }
+  const { totalCompleted, totalHoursLabel, reportedCount } = getLearningHistoryStatsAndItems();
+
+  const tabsHtml = '<div class="lh-tabs">'
+    + '<button type="button" class="lh-tab' + (learningHistoryTab === 'mine' ? ' active' : '') + '" data-action="set-learning-history-tab" data-tab="mine">Cá nhân</button>'
+    + '<button type="button" class="lh-tab' + (learningHistoryTab === 'all' ? ' active' : '') + '" data-action="set-learning-history-tab" data-tab="all">Toàn AXANH</button>'
+    + '</div>';
+
+  const kpisHtml = '<div class="lh-kpis">'
+    + '<div class="lh-kpi-card">'
+    + '<div class="lh-kpi-ico">' + icon('checkCircle', 18) + '</div>'
+    + '<div class="lh-kpi-val">' + totalCompleted + '</div>'
+    + '<div class="lh-kpi-label">Buổi đã hoàn thành</div>'
+    + '</div>'
+    + '<div class="lh-kpi-card">'
+    + '<div class="lh-kpi-ico">' + icon('clock', 18) + '</div>'
+    + '<div class="lh-kpi-val">' + esc(totalHoursLabel) + '</div>'
+    + '<div class="lh-kpi-label">Thời lượng theo lịch</div>'
+    + '</div>'
+    + '<div class="lh-kpi-card">'
+    + '<div class="lh-kpi-ico">' + icon('form', 18) + '</div>'
+    + '<div class="lh-kpi-val">' + reportedCount + '</div>'
+    + '<div class="lh-kpi-label">Đã nộp báo cáo</div>'
+    + '</div>'
+    + '</div>';
+
+  const searchHtml = '<div class="lh-search-box">'
+    + icon('search', 16)
+    + '<input id="learningHistorySearch" type="text" placeholder="Tìm kiếm chủ đề, thành viên..." value="' + esc(learningHistorySearch) + '" autocomplete="off">'
+    + '</div>';
+
+  return header + tabsHtml + kpisHtml + searchHtml
+    + '<div id="learningHistoryList">' + renderLearningHistoryList() + '</div>';
 }
 
 function openLearningScheduleModal(preselectConnId = '') {
@@ -2647,10 +2816,13 @@ function honors() {
     + '<div class="stat"><div><div class="number">' + esc(total.completedSessions || 0) + '</div><div class="label">Buổi học hoàn thành</div></div><div class="stat-icon">' + icon('calendar', 22) + '</div></div>'
     + '<div class="stat"><div><div class="number">' + esc(total.validReports || 0) + '</div><div class="label">Báo cáo Form 02 hợp lệ</div></div><div class="stat-icon">' + icon('form', 22) + '</div></div>'
     + '</div></section>'
-    + '<section style="margin-bottom:22px"><div class="section-title"><h2>Cá nhân tiêu biểu</h2></div>'
-    + individualCards + '</section>'
-    + '<section style="margin-bottom:22px"><div class="section-title"><h2>Làng tri thức tiêu biểu</h2></div>'
-    + villageCards + '</section>';
+    + '<section style="margin-bottom:22px">'
+    + '<div class="lh-tabs">'
+    + '<button type="button" class="lh-tab' + (honorsTab === 'individuals' ? ' active' : '') + '" data-action="set-honors-tab" data-tab="individuals">Cá nhân tiêu biểu (' + esc(data.individuals.length) + ')</button>'
+    + '<button type="button" class="lh-tab' + (honorsTab === 'villages' ? ' active' : '') + '" data-action="set-honors-tab" data-tab="villages">Làng tri thức tiêu biểu (' + esc(data.villages.length) + ')</button>'
+    + '</div>'
+    + (honorsTab === 'villages' ? villageCards : individualCards)
+    + '</section>';
 }
 
 const GATE1_STATUS_META = {
@@ -3409,12 +3581,12 @@ async function loadLearningData() {
     LIVE.learning.error = 'Chưa kết nối API lịch học.';
     LIVE.learning.sessions = [];
     LIVE.learning.availableConnections = [];
-    if (currentPage === 'schedule') render();
+    if (isLearningPage()) render();
     return;
   }
   LIVE.learning.loading = true;
   LIVE.learning.error = '';
-  if (currentPage === 'schedule') render();
+  if (isLearningPage()) render();
   try {
     const data = await api.getLearningData();
     if (generation !== learningLoadGeneration) return;
@@ -3429,7 +3601,7 @@ async function loadLearningData() {
   } finally {
     if (generation === learningLoadGeneration) {
       LIVE.learning.loading = false;
-      if (currentPage === 'schedule') render();
+      if (isLearningPage()) render();
     }
   }
 }
@@ -3492,7 +3664,7 @@ function render() {
   if (topTit) topTit.textContent = PAGE_LABELS[currentPage][1];
   const viewEl = document.querySelector('#view');
   if (viewEl) {
-    let body = { home, villages: liveVillagesPage, members: liveMembersPage, market, matches, network, 'connection-detail': connectionDetail, schedule, library, awards: honors, gate1, forms, settings }[currentPage]();
+    let body = { home, villages: liveVillagesPage, members: liveMembersPage, market, matches, network, 'connection-detail': connectionDetail, schedule, 'schedule-all': scheduleAll, 'learning-history': learningHistory, library, awards: honors, gate1, forms, settings }[currentPage]();
     viewEl.innerHTML = body + footer();
   }
   const sidebar = document.querySelector('#sidebar');
@@ -3797,9 +3969,21 @@ window.addEventListener('click', e => {
   const a = b.dataset.action, id = b.dataset.id;
   switch (a) {
     case 'nav': navigate(b.dataset.page); break;
-    case 'toggle-nav-group':
-      navNetworkGroupOpen = !navNetworkGroupOpen;
-      renderNav();
+    case 'toggle-nav-group': {
+      const grp = b.dataset.group;
+      if (grp) {
+        navOpenGroups[grp] = !navOpenGroups[grp];
+        renderNav();
+      }
+      break;
+    }
+    case 'set-learning-history-tab':
+      learningHistoryTab = b.dataset.tab === 'all' ? 'all' : 'mine';
+      if (currentPage === 'learning-history') render();
+      break;
+    case 'set-honors-tab':
+      honorsTab = b.dataset.tab === 'villages' ? 'villages' : 'individuals';
+      if (currentPage === 'awards') render();
       break;
     case 'open-village-market': closeModal(); marketTab = 'village'; navigate('market'); break;
     case 'forms': navigate('forms'); break;
@@ -4136,6 +4320,12 @@ document.addEventListener('input', e => {
     const ovBody = document.getElementById('connOvBody');
     if (ovBody) ovBody.innerHTML = renderConnectionsOverviewBody();
     else if (currentPage === 'connection-detail') render();
+  }
+  if (e.target.id === 'learningHistorySearch') {
+    learningHistorySearch = e.target.value;
+    const lhList = document.getElementById('learningHistoryList');
+    if (lhList) lhList.innerHTML = renderLearningHistoryList();
+    else if (currentPage === 'learning-history') render();
   }
 });
 document.addEventListener('input', e => {

@@ -102,7 +102,7 @@ function dateValue(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function mapSession(record, connection, membersById, memberId, isAdmin, now, reportIds) {
+function mapSession(record, connection, membersById, memberId, isAdmin, now, reportIds, reportCounts = new Map()) {
   const fields = record.fields ?? {};
   const scheduledBy = textValue(fields[SESSION_FIELDS.scheduledBy]);
   const status = textValue(fields[SESSION_FIELDS.status]);
@@ -143,19 +143,22 @@ function mapSession(record, connection, membersById, memberId, isAdmin, now, rep
     startAt,
     endAt,
     format: textValue(fields[SESSION_FIELDS.format]) || '',
-    locationOrLink: textValue(fields[SESSION_FIELDS.location]) || '',
+    locationOrLink: allowed ? (textValue(fields[SESSION_FIELDS.location]) || '') : '',
     scheduledBy,
     confirmedBy: textValue(fields[SESSION_FIELDS.confirmedBy]),
     otherParticipantId: textValue(fields[SESSION_FIELDS.otherParticipantId]),
     status,
     createdAt: dateValue(fields[SESSION_FIELDS.createdAt]),
     confirmedAt: dateValue(fields[SESSION_FIELDS.confirmedAt]),
+    isParticipant: participant,
     hasReported: reportIds.has(record.record_id),
+    reportCount: reportCounts.get(record.record_id) || 0,
     permissions: {
       canRespond: allowed && participant && status === 'Proposed' && scheduledBy !== memberId,
       canCancel: participant && status === 'Proposed' && scheduledBy === memberId,
       canComplete: participant && status === 'Confirmed' && endAt !== null && endAt <= now,
       canReport: participant && status === 'Completed',
+      canViewResults: allowed && status === 'Completed',
     },
   };
 }
@@ -297,6 +300,16 @@ export function createLearningService({ lark, config, connectionService, members
     return ids;
   }
 
+  function sessionReportCounts(records) {
+    const counts = new Map();
+    for (const record of records) {
+      for (const id of linkedRecordIds(record.fields?.[RESULT_FIELDS.learningSession])) {
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    }
+    return counts;
+  }
+
   async function listLearningData({ sessionUser, isAdmin = false }) {
     if (!sessionUser?.memberId) throw serviceError('Yêu cầu xác thực tài khoản.', 401);
     const [schema, sessions, connections, resultRecords, memberRecords] = await Promise.all([
@@ -313,13 +326,14 @@ export function createLearningService({ lark, config, connectionService, members
     const member = memberRecords.find((record) => memberRecordId(record) === sessionUser.memberId) || null;
     const openId = member ? larkOpenId(member) : null;
     const reported = sessionReportIds(resultRecords, openId);
+    const reportCounts = sessionReportCounts(resultRecords);
     const byRecordId = new Map(connections.map((connection) => [connection.recordId, connection]));
     const now = Date.now();
     const items = sessions.flatMap((record) => {
       const connectionId = linkedRecordIds(record.fields?.[SESSION_FIELDS.connection])[0];
       const connection = byRecordId.get(connectionId);
-      if (!connection || (!isAdmin && !isParticipant(connection, sessionUser.memberId))) return [];
-      return [mapSession(record, connection, membersById, sessionUser.memberId, isAdmin, now, reported)];
+      if (!connection) return [];
+      return [mapSession(record, connection, membersById, sessionUser.memberId, isAdmin, now, reported, reportCounts)];
     }).sort((a, b) => (a.startAt ?? 0) - (b.startAt ?? 0));
     const availableConnections = connections
       .filter((connection) => connection.status === 'Accepted' && isParticipant(connection, sessionUser.memberId))

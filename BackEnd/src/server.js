@@ -1515,7 +1515,6 @@ export function createAppServer(config, lark = new LarkClient(config), options =
       if (!session && !hasTestKey) return reply(res, 401, { success: false, error: 'Unauthorized' });
 
       const isPrivileged = hasTestKey || canManageMatching(session, config);
-      const myMemberId = session?.user?.memberId || session?.user?.id || null;
 
       try {
         // Lấy members, booths và connections song song
@@ -1548,10 +1547,8 @@ export function createAppServer(config, lark = new LarkClient(config), options =
           }
         });
 
-        // Nếu không phải admin → chỉ trả item của chính user
-        const membersToReturn = isPrivileged
-          ? allMembers
-          : allMembers.filter((m) => m.id === myMemberId || m.memberId === myMemberId);
+        // Trả về danh sách kết nối của toàn bộ thành viên cho mọi user đã đăng nhập
+        const membersToReturn = allMembers;
 
         const memberMap = new Map(allMembers.map((m) => [m.id, m]));
 
