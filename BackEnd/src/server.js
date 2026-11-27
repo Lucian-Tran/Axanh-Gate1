@@ -18,7 +18,7 @@ import { createKnowledgeService } from './knowledge-service.js';
 import { createHonorsService } from './honors-service.js';
 import { createGate1Service } from './gate1-service.js';
 
-const SESSION_MAX_AGE_SECONDS = 4 * 60 * 60;
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const COOKIE_NAME = 'axanh_dev_session';
 
 const DEV_AUTH_ENABLED =

@@ -200,7 +200,7 @@ export function createAuthStore(options = {}) {
     },
 
     // Session management
-    createSession({ token, user, authType = 'email-otp', maxAgeSeconds = 4 * 60 * 60 }) {
+    createSession({ token, user, authType = 'email-otp', maxAgeSeconds = 30 * 24 * 60 * 60 }) {
       cleanExpired();
       const now = Date.now();
       const expiresAt = now + maxAgeSeconds * 1000;

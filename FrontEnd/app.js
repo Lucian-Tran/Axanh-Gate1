@@ -3249,7 +3249,6 @@ function renderAuthScreen(opts = {}) {
     : '<div style="font-size:28px;font-weight:900;color:#eff5ff;margin-bottom:20px;letter-spacing:2px">AXANH</div>';
   const errorHtml = error ? '<div class="axanh-login-error">⚠ ' + esc(error) + '</div>' : '';
 
-  const isLarkEnv = typeof window.tt !== 'undefined' && typeof window.tt.requestAuthCode === 'function';
 
   let formContentHtml = '';
 
@@ -3297,31 +3296,10 @@ function renderAuthScreen(opts = {}) {
     + (AUTH_FLOW.step === 'email' ? 'Nhập email nhân viên AXANH để nhận mã xác thực bảo mật.' : 'Nhập mã gồm 6 chữ số vừa nhận trong email.')
     + '</p>'
     + formContentHtml
-    + '<div class="axanh-login-divider">HOẶC DÀNH CHO TÀI KHOẢN LARK</div>'
-    + (isLarkEnv
-        ? '<button class="axanh-secondary-btn" id="larkInAppLoginBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>Đăng nhập bằng Lark Client</button>'
-        : '<a href="/auth/lark/login" class="axanh-secondary-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>Đăng nhập bằng Lark (SSO)</a>')
-    + '<div class="axanh-dev-block" style="margin-top:14px">'
-    + '  <button class="axanh-dev-toggle" id="devToggleBtn">🔧 Khóa kiểm thử nội bộ (Test Key)</button>'
-    + '  <div class="axanh-dev-form" id="devKeyForm">'
-    + '    <form action="/dev-login" method="post" autocomplete="off" style="margin-top:8px">'
-    + '      <input class="axanh-dev-input" type="password" name="key" required autocomplete="off" placeholder="Nhập INTERNAL_TEST_KEY">'
-    + '      <button class="axanh-dev-submit" type="submit">Mở hệ thống</button>'
-    + '    </form>'
-    + '  </div>'
-    + '</div>'
     + '<div class="axanh-login-footer">Hệ thống nội bộ AXANH · Môi trường LAN<br>Xác thực qua danh bạ thành viên T02_Members</div>'
     + '</div>';
 
   // Attach Handlers
-  const devToggle = document.getElementById('devToggleBtn');
-  const devForm = document.getElementById('devKeyForm');
-  if (devToggle && devForm) {
-    devToggle.addEventListener('click', () => {
-      devForm.classList.toggle('open');
-    });
-  }
-
   const emailForm = document.getElementById('authEmailForm');
   if (emailForm) {
     emailForm.addEventListener('submit', async (e) => {
@@ -3420,44 +3398,6 @@ function renderAuthScreen(opts = {}) {
           renderAuthScreen();
         } catch (err) {
           renderAuthScreen({ error: err.message || 'Không thể gửi lại mã.' });
-        }
-      });
-    }
-  }
-
-  // In-App Lark login
-  if (isLarkEnv) {
-    const inAppBtn = document.getElementById('larkInAppLoginBtn');
-    if (inAppBtn) {
-      inAppBtn.addEventListener('click', async () => {
-        inAppBtn.disabled = true;
-        inAppBtn.textContent = 'Đang xác thực...';
-        try {
-          const code = await new Promise((resolve, reject) => {
-            window.tt.requestAuthCode({
-              appId: '',
-              success: (res) => resolve(res.code),
-              fail: (err) => reject(new Error(err?.errMsg || 'Lark auth thất bại')),
-            });
-          });
-          const res = await fetch('/auth/lark/in-app-login', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code }),
-          });
-          const data = await res.json();
-          if (res.ok && data.authenticated) {
-            clearAuthTimer();
-            LIVE.currentUser = data.user;
-            showAppShell();
-            render();
-            await loadLiveData();
-          } else {
-            renderAuthScreen({ error: data.error || 'Xác thực Lark thất bại.' });
-          }
-        } catch (err) {
-          renderAuthScreen({ error: err.message || 'Không thể kết nối Lark.' });
         }
       });
     }
